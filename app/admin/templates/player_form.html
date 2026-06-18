@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block heading %}{{ 'Редактирование игрока' if player else 'Новый игрок' }}{% endblock %}
+{% block crumbs %}<a href="/admin/players">Игроки</a> / {{ player.full_name if player else 'новый' }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px">
+  <form method="post" action="{{ ('/admin/players/' ~ player.id ~ '/edit') if player else '/admin/players' }}" enctype="multipart/form-data">
+    <div class="field"><label>ФИО *</label><input type="text" name="full_name" value="{{ player.full_name if player else '' }}" required autofocus></div>
+    <div class="grid c3">
+      <div class="field"><label>Дата рождения</label><input type="date" name="birth_date" value="{{ player.birth_date if player and player.birth_date else '' }}"></div>
+      <div class="field"><label>Позиция</label>
+        <select name="position">
+          <option value="">— не указана —</option>
+          {% for p in positions %}<option value="{{ p.value }}" {{ 'selected' if player and player.position and player.position.value == p.value else '' }}>{{ p.value }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Хват</label><input type="text" name="grip" value="{{ player.grip if player and player.grip else '' }}" placeholder="левый"></div>
+    </div>
+    <div class="field">
+      <label>Фото</label>
+      <div style="display:flex;gap:14px;align-items:center">
+        {% if player and player.photo_url %}<img class="avatar-img" style="width:56px;height:56px" src="{{ player.photo_url }}">{% endif %}
+        <input type="file" name="photo" accept="image/*">
+      </div>
+      <div class="hint">Загрузится на сервер и будет доступно по /media/…</div>
+    </div>
+    <div class="actions">
+      <button class="btn" type="submit">{{ 'Сохранить' if player else 'Создать' }}</button>
+      <a class="btn secondary" href="/admin/players">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

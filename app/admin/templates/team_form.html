@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block heading %}{{ 'Редактирование команды' if team else 'Новая команда' }}{% endblock %}
+{% block crumbs %}<a href="/admin/teams">Команды</a> / {{ team.name if team else 'новая' }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px">
+  <form method="post" action="{{ ('/admin/teams/' ~ team.id ~ '/edit') if team else '/admin/teams' }}" enctype="multipart/form-data">
+    <div class="field"><label>Название *</label><input type="text" name="name" value="{{ team.name if team else '' }}" required autofocus></div>
+    <div class="field"><label>Город</label><input type="text" name="city" value="{{ team.city if team and team.city else '' }}"></div>
+    <div class="field">
+      <label>Логотип</label>
+      <div style="display:flex;gap:14px;align-items:center">
+        {% if team and team.logo_url %}<img class="logo-img" style="height:52px" src="{{ team.logo_url }}">{% endif %}
+        <input type="file" name="logo" accept="image/*">
+      </div>
+      <div class="hint">Загрузится на сервер и будет доступен по /media/…{% if team and team.logo_url %} · текущий сохранится, если не выбрать новый{% endif %}</div>
+    </div>
+    <div class="actions">
+      <button class="btn" type="submit">{{ 'Сохранить' if team else 'Создать' }}</button>
+      <a class="btn secondary" href="/admin/teams">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

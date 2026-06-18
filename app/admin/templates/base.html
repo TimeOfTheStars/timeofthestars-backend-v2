@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ page_title or 'Админка' }} · TIME OF THE STARS{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    // Применяем тему до отрисовки, чтобы не мигало
+    (function(){
+      try{
+        var t = localStorage.getItem('tots-theme');
+        if(!t){ t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+        document.documentElement.setAttribute('data-theme', t);
+      }catch(e){}
+    })();
+    function totsToggleTheme(){
+      var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      var next = cur === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try{ localStorage.setItem('tots-theme', next); }catch(e){}
+      var ic = document.getElementById('theme-ic');
+      if(ic){ ic.textContent = next === 'dark' ? '☀️' : '🌙'; }
+    }
+  </script>
+  <style>
+    :root{
+      --bg:#f4f5f9; --surface:#ffffff; --surface-2:#fafbff;
+      --line:#e7e9f3; --line-2:#eef0f7;
+      --txt:#1d2030; --muted:#737a93; --faint:#9aa1bb;
+      --primary:#4f46e5; --primary-d:#4338ca; --primary-soft:#eef0ff;
+      --ok:#0f9d58; --ok-soft:#e8f7ef; --danger:#e23b54; --danger-soft:#fdecef;
+      --warn:#d98324;
+      --radius:14px; --shadow:0 1px 2px rgba(20,25,60,.05),0 8px 24px rgba(20,25,60,.05);
+    }
+    html[data-theme="dark"]{
+      --bg:#0e1220; --surface:#161b2c; --surface-2:#1b2236;
+      --line:#283150; --line-2:#212942;
+      --txt:#e8ebf7; --muted:#9aa3c4; --faint:#6f7798;
+      --primary:#6b82ff; --primary-d:#8497ff; --primary-soft:#212a49;
+      --ok:#39d98a; --ok-soft:#13301f; --danger:#ff6b7e; --danger-soft:#371b22;
+      --warn:#e0a14a;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 26px rgba(0,0,0,.4);
+      color-scheme:dark;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;line-height:1.5;}
+    a{color:var(--primary);text-decoration:none}
+    a:hover{text-decoration:underline}
+    h1{font-size:22px;margin:0 0 2px;font-weight:700;letter-spacing:-.01em}
+    h2{font-size:16px;margin:0 0 14px;font-weight:650}
+    h3{font-size:14px;margin:0;font-weight:650}
+
+    .layout{display:flex;min-height:100vh}
+    /* Sidebar */
+    .sidebar{width:236px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+    .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;padding:6px 10px 16px;letter-spacing:-.01em}
+    .brand .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#5b8cff,#7a3cff);display:grid;place-items:center;color:#fff;font-size:15px}
+    .nav a{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;color:var(--muted);font-weight:550;font-size:13.5px}
+    .nav a:hover{background:var(--surface-2);color:var(--txt);text-decoration:none}
+    .nav a.active{background:var(--primary-soft);color:var(--primary-d)}
+    .nav a .ic{width:18px;text-align:center;font-size:15px;opacity:.9}
+    .nav .sep{height:1px;background:var(--line);margin:8px 6px}
+    .sidebar .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}
+    .userchip{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px}
+    .avatar{width:30px;height:30px;border-radius:50%;background:var(--primary-soft);color:var(--primary-d);display:grid;place-items:center;font-weight:700;font-size:13px}
+
+    /* Main */
+    .main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .topbar{display:flex;align-items:center;gap:14px;padding:18px 30px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:5}
+    .crumbs{color:var(--faint);font-size:12.5px;margin-bottom:2px}
+    .crumbs a{color:var(--muted)}
+    .topbar .spacer{flex:1}
+    .content{padding:26px 30px;max-width:1160px;width:100%}
+
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:20px}
+    .card .card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .card .card-h h2{margin:0}
+    .card.tight{padding:0;overflow:hidden}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;gap:7px;background:var(--primary);color:#fff;border:1px solid var(--primary);border-radius:10px;padding:9px 15px;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s}
+    .btn:hover{background:var(--primary-d);border-color:var(--primary-d);text-decoration:none}
+    .btn.secondary{background:var(--surface);color:var(--txt);border-color:var(--line)}
+    .btn.secondary:hover{background:var(--surface-2)}
+    .btn.danger{background:var(--surface);color:var(--danger);border-color:var(--line)}
+    .btn.danger:hover{background:var(--danger-soft)}
+    .btn.sm{padding:6px 10px;font-size:12.5px;border-radius:8px}
+    .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+    .btn.ghost:hover{background:var(--surface-2)}
+    .btn.soft{background:var(--primary-soft);color:var(--primary-d);border-color:transparent}
+    .btn.soft:hover{background:var(--primary-soft);filter:brightness(.97)}
+
+    /* Ровная строка элементов формы (все контролы одной высоты, прижаты к низу) */
+    .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+    .toolbar .field{margin:0}
+    .toolbar input,.toolbar select,.toolbar .check,.toolbar .btn,.toolbar .switch{height:40px}
+    .toolbar .check{justify-content:center;white-space:nowrap}
+
+    /* Переключатель (toggle) */
+    .switch{display:inline-flex;align-items:center;cursor:pointer}
+    .switch input{position:absolute;opacity:0;width:0;height:0}
+    .switch .track{width:46px;height:26px;border-radius:999px;background:var(--line);position:relative;transition:.15s}
+    .switch .track::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:.15s}
+    .switch input:checked + .track{background:var(--primary)}
+    .switch input:checked + .track::after{transform:translateX(20px)}
+
+    /* Forms */
+    .field{margin-bottom:14px}
+    label{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:6px}
+    input[type=text],input[type=password],input[type=date],input[type=time],input[type=number],input:not([type]),select,textarea{
+      width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;color:var(--txt);transition:.12s;font-family:inherit}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+    .grid{display:grid;gap:16px}
+    .grid.c2{grid-template-columns:1fr 1fr}
+    .grid.c3{grid-template-columns:1fr 1fr 1fr}
+    .check{display:flex;align-items:center;gap:9px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:550;color:var(--txt);user-select:none}
+    .check input{width:auto;margin:0}
+    .check:has(input:checked){border-color:var(--primary);background:var(--primary-soft);color:var(--primary-d)}
+    .actions{display:flex;gap:10px;align-items:center;margin-top:6px}
+    .hint{font-size:12px;color:var(--faint);margin-top:5px}
+
+    /* Tables */
+    table{width:100%;border-collapse:collapse}
+    thead th{text-align:left;padding:11px 16px;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);font-weight:700;background:var(--surface-2);border-bottom:1px solid var(--line)}
+    tbody td{padding:12px 16px;border-bottom:1px solid var(--line-2);font-size:13.5px;vertical-align:middle}
+    tbody tr:last-child td{border-bottom:0}
+    tbody tr:hover{background:var(--surface-2)}
+    .row-actions{display:flex;gap:6px;justify-content:flex-end}
+    td.num,th.num{text-align:center}
+
+    /* Bits */
+    .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;background:var(--line-2);color:var(--muted)}
+    .pill.ok{background:var(--ok-soft);color:var(--ok)}
+    .pill.primary{background:var(--primary-soft);color:var(--primary-d)}
+    .pill.warn{background:#fff3e6;color:var(--warn)}
+    .muted{color:var(--muted)}
+    .faint{color:var(--faint)}
+    .avatar-img{width:34px;height:34px;border-radius:50%;object-fit:cover;background:var(--line-2)}
+    .logo-img{height:30px;border-radius:7px;background:var(--line-2)}
+    .empty{text-align:center;color:var(--faint);padding:40px 10px}
+    .empty .big{font-size:34px;margin-bottom:8px}
+    .flash{display:flex;gap:9px;align-items:center;background:var(--danger-soft);border:1px solid #f6c9d2;color:#9c1f33;padding:11px 14px;border-radius:10px;margin-bottom:18px}
+    .stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+    .stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+    .stat .v{font-size:24px;font-weight:750}
+    .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+    .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
+    .tabs a{padding:9px 14px;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;border-radius:0}
+    .tabs a:hover{color:var(--txt);text-decoration:none}
+    .tabs a.active{color:var(--primary-d);border-bottom-color:var(--primary)}
+    .sectionbar{display:flex;align-items:center;justify-content:space-between;margin:26px 0 12px}
+    .sectionbar h2{margin:0}
+
+    /* Modal */
+    .modal-overlay{position:fixed;inset:0;background:rgba(10,12,24,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+    .modal-overlay.open{display:flex}
+    .modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);width:480px;max-width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(10,12,30,.4)}
+    .modal-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line)}
+    .modal-h h2{margin:0}
+    .modal-h .x{background:transparent;border:0;color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+    .modal-body{padding:14px 18px;overflow:auto}
+    .modal-search{margin-bottom:10px}
+    .modal-f{display:flex;gap:10px;align-items:center;padding:14px 18px;border-top:1px solid var(--line)}
+    .pick-list{display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto}
+    .pick-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer}
+    .pick-row:hover{background:var(--surface-2)}
+    .pick-row input{width:auto;margin:0}
+
+    @media(max-width:860px){
+      .sidebar{position:fixed;left:-260px;transition:.2s;z-index:30}
+      .grid.c2,.grid.c3{grid-template-columns:1fr}
+      .content{padding:18px}
+      .topbar{padding:14px 18px}
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% if user %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">⭐</span><span>TIME OF THE STARS</span></div>
+    {% set path = request.url.path %}
+    <nav class="nav">
+      <a href="/admin" class="{{ 'active' if path == '/admin' or path == '/admin/' else '' }}"><span class="ic">▦</span> Дашборд</a>
+      <a href="/admin/competitions" class="{{ 'active' if '/admin/competitions' in path else '' }}"><span class="ic">🏆</span> Соревнования</a>
+      <a href="/admin/teams" class="{{ 'active' if '/admin/teams' in path else '' }}"><span class="ic">🛡️</span> Команды</a>
+      <a href="/admin/players" class="{{ 'active' if '/admin/players' in path else '' }}"><span class="ic">⛸️</span> Игроки</a>
+      <div class="sep"></div>
+      <a href="/admin/homepage" class="{{ 'active' if '/admin/homepage' in path else '' }}"><span class="ic">🖥️</span> Главный экран</a>
+      {% if is_admin %}<a href="/admin/users" class="{{ 'active' if '/admin/users' in path else '' }}"><span class="ic">👤</span> Пользователи</a>{% endif %}
+    </nav>
+    <div class="foot">
+      <div class="userchip">
+        <span class="avatar">{{ (user.username or '?')[0]|upper }}</span>
+        <div style="min-width:0">
+          <div style="font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis">{{ user.username }}</div>
+          <div class="faint" style="font-size:11.5px">{{ user.role }}</div>
+        </div>
+        <a href="/admin/logout" class="btn ghost sm" style="margin-left:auto" title="Выйти">⎋</a>
+      </div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="crumbs">{% block crumbs %}{% endblock %}</div>
+        <h1>{% block heading %}{{ page_title }}{% endblock %}</h1>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" type="button" onclick="totsToggleTheme()" title="Светлая / тёмная тема" style="font-size:16px"><span id="theme-ic">🌙</span></button>
+      {% block topbar_actions %}{% endblock %}
+    </div>
+    <div class="content">
+      {% if flash %}<div class="flash">⚠️ {{ flash }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% else %}
+  {% block bare %}{% endblock %}
+{% endif %}
+<script>
+  // выставляем корректную иконку темы при загрузке
+  (function(){var ic=document.getElementById('theme-ic'); if(ic){ic.textContent=document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙';}})();
+
+  // Модальные окна
+  function openModal(id){
+    var m=document.getElementById('m-'+id);
+    if(!m) return;
+    m.classList.add('open');
+    var s=m.querySelector('.modal-search');
+    if(s){ s.value=''; filterPick(s); s.focus(); }
+  }
+  function closeModal(id){ var m=document.getElementById('m-'+id); if(m) m.classList.remove('open'); }
+  function filterPick(input){
+    var q=input.value.trim().toLowerCase();
+    input.closest('.modal').querySelectorAll('.pick-row').forEach(function(r){
+      r.style.display = (r.dataset.name||'').indexOf(q) >= 0 ? '' : 'none';
+    });
+  }
+  document.addEventListener('click', function(e){
+    if(e.target.classList && e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape') document.querySelectorAll('.modal-overlay.open').forEach(function(m){ m.classList.remove('open'); });
+  });
+</script>
+</body>
+</html>

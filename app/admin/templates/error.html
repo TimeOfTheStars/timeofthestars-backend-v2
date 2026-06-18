@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block page_title %}Ошибка{% endblock %}
+{% block heading %}Что-то пошло не так{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="flash">⚠️ {{ message }}</div>
+  <a href="javascript:history.back()" class="btn secondary">← Назад</a>
+</div>
+{% endblock %}

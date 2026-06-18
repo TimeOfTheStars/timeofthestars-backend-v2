@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block heading %}Пользователи{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px">
+  <h2>Создать пользователя</h2>
+  <form method="post" action="/admin/users">
+    <div class="grid c3">
+      <div class="field"><label>Логин</label><input type="text" name="username" required></div>
+      <div class="field"><label>Пароль</label><input type="password" name="password" required></div>
+      <div class="field"><label>Роль</label><select name="role">{% for r in roles %}<option value="{{ r.value }}">{{ r.value }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Создать</button></div>
+  </form>
+</div>
+
+<div class="card tight">
+  <table>
+    <thead><tr><th>Логин</th><th>Роль</th><th>Статус</th><th>Сменить пароль</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td><b>{{ u.username }}</b></td>
+      <td><span class="pill {{ 'primary' if u.role.value == 'admin' else '' }}">{{ u.role }}</span></td>
+      <td>{% if u.is_active %}<span class="pill ok">активен</span>{% else %}<span class="pill">отключён</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/password" style="display:flex;gap:6px;max-width:240px">
+          <input type="password" name="password" placeholder="новый пароль">
+          <button class="btn sm secondary" type="submit">OK</button>
+        </form>
+      </td>
+      <td><div class="row-actions">
+        <form method="post" action="/admin/users/{{ u.id }}/delete" onsubmit="return confirm('Удалить пользователя «{{ u.username }}»?')">
+          <button class="btn sm danger" type="submit">Удалить</button>
+        </form>
+      </div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

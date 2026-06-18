@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block bare %}
+<div style="min-height:100vh;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% -10%,var(--primary-soft),var(--bg))">
+  <div style="width:360px;max-width:92vw">
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#5b8cff,#7a3cff);display:inline-grid;place-items:center;color:#fff;font-size:26px">⭐</div>
+      <h1 style="margin:14px 0 2px">TIME OF THE STARS</h1>
+      <div class="muted">Панель управления лигой</div>
+    </div>
+    <div class="card">
+      {% if error %}<div class="flash">⚠️ {{ error }}</div>{% endif %}
+      <form method="post" action="/admin/login">
+        <div class="field"><label>Логин</label><input type="text" name="username" autofocus></div>
+        <div class="field"><label>Пароль</label><input type="password" name="password"></div>
+        <button class="btn" type="submit" style="width:100%;justify-content:center">Войти</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

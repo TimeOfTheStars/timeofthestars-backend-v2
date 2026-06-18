@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block heading %}Протокол матча{% endblock %}
+{% block crumbs %}<a href="/admin/competitions/{{ game.competition_id }}">Соревнование</a> / матч #{{ game.id }}{% endblock %}
+{% block head %}
+<style>
+  .score-head{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap}
+  .score-team{flex:1;min-width:160px;text-align:center}
+  .score-team .nm{font-weight:700;font-size:16px;margin-bottom:8px}
+  .score-team input{font-size:30px;font-weight:800;text-align:center;height:64px;padding:0}
+  .vs{color:var(--faint);font-weight:700;font-size:18px;padding-top:24px}
+  .proto th, .proto td{padding:8px 10px}
+  .proto input[type=number]{width:58px;text-align:center;padding:6px}
+  .proto tr.off{opacity:.42}
+  .proto .gfields input:disabled{background:var(--line-2);color:var(--faint)}
+  .savebar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 30px;margin:0 -30px -26px;display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(20,25,60,.05)}
+</style>
+{% endblock %}
+{% block content %}
+<form method="post" action="/admin/games/{{ game.id }}/protocol">
+  <div class="card">
+    <div class="score-head">
+      <div class="score-team">
+        <div class="nm">{{ team_a.name if team_a else game.team_a_id }}</div>
+        <input type="number" name="score_team_a" min="0" value="{{ game.score_team_a if game.score_team_a is not none else '' }}" placeholder="0">
+      </div>
+      <div class="vs">:</div>
+      <div class="score-team">
+        <div class="nm">{{ team_b.name if team_b else game.team_b_id }}</div>
+        <input type="number" name="score_team_b" min="0" value="{{ game.score_team_b if game.score_team_b is not none else '' }}" placeholder="0">
+      </div>
+    </div>
+    <div class="field" style="max-width:360px;margin:18px auto 0">
+      <label style="text-align:center">Победитель буллитов (при ничьей)</label>
+      <select name="bullet_win_team_id">
+        <option value="">— нет —</option>
+        <option value="{{ game.team_a_id }}" {{ 'selected' if game.bullet_win_team_id == game.team_a_id else '' }}>{{ team_a.name if team_a else game.team_a_id }}</option>
+        <option value="{{ game.team_b_id }}" {{ 'selected' if game.bullet_win_team_id == game.team_b_id else '' }}>{{ team_b.name if team_b else game.team_b_id }}</option>
+      </select>
+    </div>
+  </div>
+
+  {% for tid, players in team_players.items() %}
+  <div class="card tight">
+    <div class="card-h" style="padding:16px 20px 0">
+      <h2>{{ team_a.name if (team_a and tid == game.team_a_id) else (team_b.name if team_b else tid) }}</h2>
+      <span class="muted">{{ players|length }} в заявке</span>
+    </div>
+    {% if players %}
+    <table class="proto">
+      <thead><tr>
+        <th style="width:64px">Играл</th><th>Игрок</th>
+        <th class="num">Голы</th><th class="num">Пас</th><th class="num">Штраф</th>
+        <th class="num">Вратарь</th><th class="num">Проп.</th><th class="num">Сейвы</th><th class="num">Мин</th>
+      </tr></thead>
+      <tbody>
+      {% for cp in players %}
+      {% set ex = existing.get((cp.player_id, tid)) %}
+      <tr class="prow {{ '' if ex else 'off' }}">
+        <td class="num"><input type="checkbox" class="played" name="pid-{{ cp.player_id }}-{{ tid }}" {{ 'checked' if ex else '' }}></td>
+        <td><b>{{ cp.player.full_name }}</b> {% if cp.number is not none %}<span class="faint">#{{ cp.number }}</span>{% endif %}</td>
+        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-goals" value="{{ ex.goals if ex else 0 }}"></td>
+        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-assists" value="{{ ex.assists if ex else 0 }}"></td>
+        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-penalties" value="{{ ex.penalties if ex else 0 }}"></td>
+        <td class="num"><input type="checkbox" class="goalie" name="stat-{{ cp.player_id }}-{{ tid }}-is_goalie" {{ 'checked' if ex and ex.is_goalie else '' }}></td>
+        <td class="num gfields"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-goals_against" value="{{ ex.goals_against if ex and ex.goals_against is not none else '' }}"></td>
+        <td class="num gfields"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-saves" value="{{ ex.saves if ex and ex.saves is not none else '' }}"></td>
+        <td class="num gfields"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-minutes_played" value="{{ ex.minutes_played if ex and ex.minutes_played is not none else '' }}"></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty" style="padding:26px"><div class="big">⛸️</div>В заявке этой команды нет игроков.<br><a href="/admin/competitions/{{ game.competition_id }}">Добавить в составе соревнования →</a></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="savebar">
+    <button class="btn" type="submit">💾 Сохранить протокол</button>
+    <a class="btn secondary" href="/admin/competitions/{{ game.competition_id }}">Отмена</a>
+    <span class="muted" style="margin-left:auto">Отметьте «Играл» у участников; счёт и статистика пересчитают таблицу автоматически.</span>
+  </div>
+</form>
+
+<script>
+(function(){
+  function syncGoalie(row){
+    var g = row.querySelector('.goalie');
+    row.querySelectorAll('.gfields input').forEach(function(i){ i.disabled = !g.checked; });
+  }
+  function syncPlayed(row){ row.classList.toggle('off', !row.querySelector('.played').checked); }
+  document.querySelectorAll('.proto tr.prow').forEach(function(row){
+    syncGoalie(row); syncPlayed(row);
+    row.querySelector('.goalie').addEventListener('change', function(){ syncGoalie(row); });
+    row.querySelector('.played').addEventListener('change', function(){ syncPlayed(row); });
+    // автоотметка «играл» при вводе любой статы
+    row.querySelectorAll('input[type=number]').forEach(function(i){
+      i.addEventListener('input', function(){
+        if (parseInt(i.value||'0',10) > 0){ var p = row.querySelector('.played'); if(!p.checked){ p.checked = true; syncPlayed(row);} }
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

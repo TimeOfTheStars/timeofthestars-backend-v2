@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block heading %}Редактирование матча #{{ game.id }}{% endblock %}
+{% block crumbs %}<a href="/admin/competitions/{{ game.competition_id }}">Соревнование</a> / матч #{{ game.id }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px">
+  <form method="post" action="/admin/games/{{ game.id }}/edit" enctype="multipart/form-data">
+    <div class="grid c2">
+      <div class="field"><label>Команда A *</label>
+        <select name="team_a_id">
+          {% for ct in roster %}<option value="{{ ct.team_id }}" {{ 'selected' if game.team_a_id == ct.team_id else '' }}>{{ ct.team.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Команда B *</label>
+        <select name="team_b_id">
+          {% for ct in roster %}<option value="{{ ct.team_id }}" {{ 'selected' if game.team_b_id == ct.team_id else '' }}>{{ ct.team.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="grid c3">
+      <div class="field"><label>Дата *</label><input type="date" name="date" value="{{ game.date }}" required></div>
+      <div class="field"><label>Время</label><input type="time" name="time" value="{{ game.time.strftime('%H:%M') if game.time else '' }}"></div>
+      <div class="field"><label>Стадия</label>
+        <select name="stage">
+          {% for s in stages %}<option value="{{ s.value }}" {{ 'selected' if game.stage.value == s.value else '' }}>{{ s.value }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Локация</label><input type="text" name="location" value="{{ game.location or '' }}"></div>
+    <div class="field"><label>Ссылка на трансляцию</label><input type="text" name="video_url" value="{{ game.video_url or '' }}" placeholder="https://… (YouTube, VK Видео и т.п.)"></div>
+    <div class="field">
+      <label>Скан протокола</label>
+      <div style="display:flex;gap:14px;align-items:center">
+        {% if game.scan %}<a href="{{ game.scan }}" target="_blank"><img class="logo-img" style="height:54px" src="{{ game.scan }}" alt="скан"></a>{% endif %}
+        <input type="file" name="scan" accept="image/*">
+      </div>
+      <div class="hint">Картинка загрузится на сервер (/media/…){% if game.scan %} · текущий сохранится, если не выбрать новый{% endif %}</div>
+    </div>
+    <div class="hint" style="margin-bottom:14px">Счёт и статистику игроков вводите на экране «Протокол».</div>
+    <div class="actions">
+      <button class="btn" type="submit">Сохранить</button>
+      <a class="btn secondary" href="/admin/games/{{ game.id }}/protocol">Протокол</a>
+      <a class="btn secondary" href="/admin/competitions/{{ game.competition_id }}">Отмена</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

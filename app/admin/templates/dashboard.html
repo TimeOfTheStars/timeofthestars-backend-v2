@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block heading %}Дашборд{% endblock %}
+{% block content %}
+<div class="stat-cards" style="margin-bottom:22px">
+  <a class="stat" href="/admin/competitions" style="text-decoration:none;color:inherit"><div class="v">{{ counts.competitions }}</div><div class="l">Соревнований</div></a>
+  <a class="stat" href="/admin/teams" style="text-decoration:none;color:inherit"><div class="v">{{ counts.teams }}</div><div class="l">Команд</div></a>
+  <a class="stat" href="/admin/players" style="text-decoration:none;color:inherit"><div class="v">{{ counts.players }}</div><div class="l">Игроков</div></a>
+  <div class="stat"><div class="v">{{ counts.games }}</div><div class="l">Матчей</div></div>
+</div>
+
+<div class="card tight">
+  <div class="card-h" style="padding:16px 20px 0">
+    <h2>📅 Игры на этой неделе</h2>
+    <span class="muted">{{ week_start.strftime('%d.%m') }} — {{ week_end.strftime('%d.%m') }}</span>
+  </div>
+  {% if this_week %}
+  {% set wd = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'] %}
+  <table>
+    <thead><tr><th>Когда</th><th>Соревнование</th><th>Матч</th><th class="num">Счёт</th><th></th></tr></thead>
+    <tbody>
+    {% for g in this_week %}
+    <tr class="{{ 'is-today' if g.date == today else '' }}">
+      <td>
+        {% if g.date == today %}<span class="pill primary">сегодня</span> {% endif %}
+        <span class="muted">{{ wd[g.date.weekday()] }} {{ g.date.strftime('%d.%m') }}{% if g.time %} · {{ g.time.strftime('%H:%M') }}{% endif %}</span>
+      </td>
+      <td class="muted">{{ comp_names.get(g.competition_id, '—') }}</td>
+      <td><b>{{ team_names.get(g.team_a_id, g.team_a_id) }}</b> — <b>{{ team_names.get(g.team_b_id, g.team_b_id) }}</b>
+        {% if g.video_url %}<a href="{{ g.video_url }}" target="_blank" title="Трансляция" style="margin-left:6px">📺</a>{% endif %}
+      </td>
+      <td class="num">{% if g.score_team_a is not none %}<b>{{ g.score_team_a }} : {{ g.score_team_b }}</b>{% else %}<span class="faint">—</span>{% endif %}</td>
+      <td><div class="row-actions"><a class="btn sm" href="/admin/games/{{ g.id }}/protocol">Протокол</a></div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty"><div class="big">📅</div>На этой неделе игр нет</div>
+  {% endif %}
+</div>
+
+<div class="grid c2">
+  <div class="card tight">
+    <div class="card-h" style="padding:16px 20px 0"><h2>Соревнования</h2><a class="btn sm secondary" href="/admin/competitions">Все →</a></div>
+    {% if competitions %}
+    <table>
+      <thead><tr><th>Название</th><th>Тип</th><th>Старт</th></tr></thead>
+      <tbody>
+      {% for c in competitions[:6] %}
+      <tr onclick="location='/admin/competitions/{{ c.id }}'" style="cursor:pointer">
+        <td><b>{{ c.name }}</b></td>
+        <td><span class="pill primary">{{ c.type }}</span></td>
+        <td class="muted">{{ c.start_date }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty"><div class="big">🏆</div>Пока нет соревнований<br><a class="btn sm" style="margin-top:12px" href="/admin/competitions/new">Создать</a></div>{% endif %}
+  </div>
+
+  <div class="card tight">
+    <div class="card-h" style="padding:16px 20px 0"><h2>Несыгранные матчи</h2></div>
+    {% if upcoming %}
+    <table>
+      <thead><tr><th>Дата</th><th>Матч</th><th class="num">Протокол</th></tr></thead>
+      <tbody>
+      {% for g in upcoming %}
+      <tr>
+        <td class="muted">{{ g.date }} {{ g.time or '' }}</td>
+        <td>#{{ g.id }} · <span class="pill">{{ g.stage }}</span></td>
+        <td class="num"><a class="btn sm" href="/admin/games/{{ g.id }}/protocol">Ввести</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty"><div class="big">✅</div>Нет запланированных матчей</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

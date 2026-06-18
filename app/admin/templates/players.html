@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block heading %}Игроки{% endblock %}
+{% block topbar_actions %}<a class="btn" href="/admin/players/new">＋ Игрок</a>{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-h">
+    <form method="get" action="/admin/players" style="display:flex;gap:8px;width:320px;max-width:60%">
+      <input type="text" name="q" value="{{ q }}" placeholder="Поиск по ФИО…">
+      <input type="hidden" name="size" value="{{ size }}">
+      <button class="btn secondary" type="submit">Найти</button>
+    </form>
+    <div style="display:flex;align-items:center;gap:12px">
+      <form method="get" action="/admin/players" style="display:flex;align-items:center;gap:6px">
+        <input type="hidden" name="q" value="{{ q }}">
+        <label style="margin:0">Показывать по</label>
+        <select name="size" onchange="this.form.submit()" style="width:auto">
+          {% for s in page_sizes %}<option value="{{ s }}" {{ 'selected' if s == size else '' }}>{{ s }}</option>{% endfor %}
+        </select>
+      </form>
+      <span class="muted">{{ total }} всего</span>
+    </div>
+  </div>
+  {% if players %}
+  <div class="card tight">
+  <table>
+    <thead><tr><th style="width:50px"></th><th>ФИО</th><th>Позиция</th><th>Дата рожд.</th><th>Хват</th><th></th></tr></thead>
+    <tbody>
+    {% for p in players %}
+    <tr>
+      <td>{% if p.photo_url %}<img class="avatar-img" src="{{ p.photo_url }}" alt="">{% else %}<span class="avatar" style="width:34px;height:34px">{{ (p.full_name or '?')[0] }}</span>{% endif %}</td>
+      <td><b>{{ p.full_name }}</b></td>
+      <td>{% if p.position %}<span class="pill">{{ p.position }}</span>{% else %}<span class="faint">—</span>{% endif %}</td>
+      <td class="muted">{{ p.birth_date or '—' }}</td>
+      <td class="muted">{{ p.grip or '—' }}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn sm secondary" href="/admin/players/{{ p.id }}/edit">Изменить</a>
+          <form method="post" action="/admin/players/{{ p.id }}/delete" onsubmit="return confirm('Удалить игрока «{{ p.full_name }}»?')">
+            <button class="btn sm danger" type="submit">Удалить</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if total_pages > 1 %}
+  {% set base = '/admin/players?q=' ~ (q|urlencode) ~ '&size=' ~ size %}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">
+    <span class="muted">Стр. {{ page }} из {{ total_pages }}</span>
+    <div class="row-actions">
+      {% if page > 1 %}
+        <a class="btn sm secondary" href="{{ base }}&page=1">« Первая</a>
+        <a class="btn sm secondary" href="{{ base }}&page={{ page - 1 }}">‹ Назад</a>
+      {% else %}
+        <span class="btn sm secondary" style="opacity:.4;pointer-events:none">« Первая</span>
+        <span class="btn sm secondary" style="opacity:.4;pointer-events:none">‹ Назад</span>
+      {% endif %}
+      {% if page < total_pages %}
+        <a class="btn sm secondary" href="{{ base }}&page={{ page + 1 }}">Вперёд ›</a>
+        <a class="btn sm secondary" href="{{ base }}&page={{ total_pages }}">Последняя »</a>
+      {% else %}
+        <span class="btn sm secondary" style="opacity:.4;pointer-events:none">Вперёд ›</span>
+        <span class="btn sm secondary" style="opacity:.4;pointer-events:none">Последняя »</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty"><div class="big">⛸️</div>{% if q %}Ничего не найдено{% else %}Игроков пока нет{% endif %}<br><a class="btn sm" style="margin-top:12px" href="/admin/players/new">Добавить игрока</a></div>
+  {% endif %}
+</div>
+{% endblock %}

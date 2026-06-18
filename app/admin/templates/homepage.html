@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block heading %}Главный экран сайта{% endblock %}
+{% block content %}
+<div class="card" style="max-width:620px">
+  <p class="muted" style="margin-top:0">Что показывать посетителям на главной странице сайта лиги.</p>
+  <form method="post" action="/admin/homepage">
+    <div class="field">
+      <label class="check"><input type="checkbox" name="show_bracket" {{ 'checked' if cfg.show_bracket else '' }}> Показывать турнирную сетку</label>
+    </div>
+    <div class="field"><label>Сетка из соревнования</label>
+      <select name="bracket_competition_id">
+        <option value="">—</option>
+        {% for c in competitions %}<option value="{{ c.id }}" {{ 'selected' if cfg.bracket_competition_id == c.id else '' }}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+    <div class="field">
+      <label class="check"><input type="checkbox" name="show_standings" {{ 'checked' if cfg.show_standings else '' }}> Показывать турнирную таблицу</label>
+    </div>
+    <div class="field"><label>Таблица из соревнования</label>
+      <select name="standings_competition_id">
+        <option value="">—</option>
+        {% for c in competitions %}<option value="{{ c.id }}" {{ 'selected' if cfg.standings_competition_id == c.id else '' }}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Сохранить</button></div>
+  </form>
+</div>
+{% endblock %}

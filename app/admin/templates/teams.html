@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block heading %}Команды{% endblock %}
+{% block topbar_actions %}<a class="btn" href="/admin/teams/new">＋ Команда</a>{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-h">
+    <form method="get" action="/admin/teams" style="display:flex;gap:8px;width:320px;max-width:60%">
+      <input type="text" name="q" value="{{ q }}" placeholder="Поиск по названию или городу…">
+      <button class="btn secondary" type="submit">Найти</button>
+    </form>
+    <span class="muted">{{ total }} всего</span>
+  </div>
+  {% if teams %}
+  <div class="card tight">
+  <table>
+    <thead><tr><th style="width:50px"></th><th>Название</th><th>Город</th><th>Slug</th><th></th></tr></thead>
+    <tbody>
+    {% for t in teams %}
+    <tr>
+      <td>{% if t.logo_url %}<img class="logo-img" src="{{ t.logo_url }}" alt="">{% else %}<span class="pill">🛡️</span>{% endif %}</td>
+      <td><b>{{ t.name }}</b></td>
+      <td class="muted">{{ t.city or '—' }}</td>
+      <td class="faint">{{ t.slug }}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn sm secondary" href="/admin/teams/{{ t.id }}/edit">Изменить</a>
+          <form method="post" action="/admin/teams/{{ t.id }}/delete" onsubmit="return confirm('Удалить команду «{{ t.name }}»?')">
+            <button class="btn sm danger" type="submit">Удалить</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty"><div class="big">🛡️</div>Команд пока нет<br><a class="btn sm" style="margin-top:12px" href="/admin/teams/new">Добавить команду</a></div>
+  {% endif %}
+</div>
+{% endblock %}

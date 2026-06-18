@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block heading %}{{ comp.name }}{% endblock %}
+{% block crumbs %}<a href="/admin/competitions">Соревнования</a> / {{ comp.name }}{% endblock %}
+{% block topbar_actions %}
+<form method="post" action="/admin/competitions/{{ comp.id }}/delete" onsubmit="return confirm('Удалить соревнование целиком?')">
+  <button class="btn danger" type="submit">Удалить</button>
+</form>
+{% endblock %}
+{% block content %}
+
+<div class="grid c2">
+  <!-- Параметры -->
+  <div class="card">
+    <h2>Параметры</h2>
+    <form method="post" action="/admin/competitions/{{ comp.id }}/edit">
+      <div class="field"><label>Название</label><input type="text" name="name" value="{{ comp.name }}"></div>
+      <div class="field"><label>Локация</label><input type="text" name="location" value="{{ comp.location or '' }}"></div>
+      <div class="field"><label>Победитель</label>
+        <select name="winner_team_id">
+          <option value="">— не определён —</option>
+          {% for ct in roster %}<option value="{{ ct.team_id }}" {{ 'selected' if comp.winner_team_id == ct.team_id else '' }}>{{ ct.team.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="grid c2" style="margin-bottom:8px">
+        <label class="check"><input type="checkbox" name="show_playoff_bracket" {{ 'checked' if comp.show_playoff_bracket else '' }}> Турнирная сетка</label>
+        <label class="check"><input type="checkbox" name="show_best_players" {{ 'checked' if comp.show_best_players else '' }}> Лучшие игроки</label>
+      </div>
+      <div class="actions"><button class="btn" type="submit">Сохранить</button></div>
+    </form>
+  </div>
+
+  <!-- Таблица -->
+  <div class="card tight">
+    <div class="card-h" style="padding:18px 20px 0"><h2>Турнирная таблица</h2><span class="pill primary">{{ comp.type }}</span></div>
+    {% if standings %}
+    <table>
+      <thead><tr><th class="num">#</th><th>Команда</th><th class="num">И</th><th class="num">В</th><th class="num">Н</th><th class="num">П</th><th class="num">Шайбы</th><th class="num">О</th></tr></thead>
+      <tbody>
+      {% for s in standings %}
+      <tr>
+        <td class="num muted">{{ loop.index }}</td>
+        <td><b>{{ s.team.name }}</b></td>
+        <td class="num">{{ s.games }}</td><td class="num">{{ s.wins }}</td><td class="num">{{ s.draws }}</td><td class="num">{{ s.losses }}</td>
+        <td class="num muted">{{ s.goals_scored }}:{{ s.goals_conceded }}</td>
+        <td class="num"><b>{{ s.points }}</b></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty"><div class="big">📊</div>Нет сыгранных матчей регулярки</div>{% endif %}
+  </div>
+</div>
+
+<!-- Состав -->
+<div class="sectionbar"><h2>Состав</h2></div>
+{% set in_ids = roster | map(attribute='team_id') | list %}
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+    <form method="post" action="/admin/competitions/{{ comp.id }}/teams" style="display:flex;gap:8px;align-items:end;flex:1;min-width:280px">
+      <div class="field" style="flex:1;margin:0"><label>Добавить команду в соревнование</label>
+        <select name="team_id">{% for t in all_teams if t.id not in in_ids %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>
+      </div>
+      <button class="btn" type="submit">Добавить</button>
+    </form>
+    <button class="btn soft" type="button" onclick="openModal('add-teams')">＋ Добавить несколько</button>
+  </div>
+</div>
+
+<!-- Модалка массового добавления команд -->
+<div class="modal-overlay" id="m-add-teams">
+  <div class="modal">
+    <div class="modal-h"><h2>Добавить команды</h2><button type="button" class="x" onclick="closeModal('add-teams')">✕</button></div>
+    <form method="post" action="/admin/competitions/{{ comp.id }}/teams/bulk" style="display:flex;flex-direction:column;min-height:0">
+      <div class="modal-body">
+        <input type="text" class="modal-search" placeholder="Поиск команды…" oninput="filterPick(this)">
+        <div class="pick-list">
+          {% for t in all_teams if t.id not in in_ids %}
+          <label class="pick-row" data-name="{{ (t.name ~ ' ' ~ (t.city or ''))|lower }}">
+            <input type="checkbox" name="team_ids" value="{{ t.id }}">
+            <span>{{ t.name }}</span>{% if t.city %}<span class="faint">· {{ t.city }}</span>{% endif %}
+          </label>
+          {% else %}
+          <p class="muted" style="padding:10px">Все команды уже добавлены в это соревнование.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-f">
+        <button class="btn" type="submit">Готово</button>
+        <button class="btn secondary" type="button" onclick="closeModal('add-teams')">Отмена</button>
+        <span class="muted" style="margin-left:auto;font-size:12.5px">Отметьте нужные команды</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% for ct in roster %}
+<div class="card">
+  <div class="card-h">
+    <h3>🛡️ {{ ct.team.name }}</h3>
+    <div class="row-actions">
+      <button class="btn sm soft" type="button" onclick="openModal('add-players-{{ ct.team_id }}')">＋ Добавить несколько</button>
+      <form method="post" action="/admin/competitions/{{ comp.id }}/teams/{{ ct.team_id }}/delete" onsubmit="return confirm('Убрать команду из соревнования?')">
+        <button class="btn sm danger" type="submit">Убрать команду</button>
+      </form>
+    </div>
+  </div>
+  {% set tps = roster_players | selectattr('team_id','equalto',ct.team_id) | list %}
+  {% if tps %}
+  <table style="margin-bottom:12px">
+    <thead><tr><th class="num" style="width:90px">№</th><th>Игрок</th><th style="width:130px">Контракт</th><th style="width:160px"></th></tr></thead>
+    <tbody>
+    {% for cp in tps %}
+    {% set fid = 'rp-' ~ ct.team_id ~ '-' ~ cp.player_id %}
+    <tr>
+      <td class="num">
+        <form id="{{ fid }}" method="post" action="/admin/competitions/{{ comp.id }}/players/{{ cp.player_id }}/number">
+          <input type="hidden" name="team_id" value="{{ ct.team_id }}">
+        </form>
+        <input form="{{ fid }}" type="number" name="number" min="0" value="{{ cp.number if cp.number is not none else '' }}" placeholder="—" style="width:64px;text-align:center">
+      </td>
+      <td>{{ cp.player.full_name }}</td>
+      <td><label class="check" style="padding:5px 9px;font-size:12.5px"><input form="{{ fid }}" type="checkbox" name="contract" {{ 'checked' if cp.contract else '' }}> контракт</label></td>
+      <td><div class="row-actions">
+        <button form="{{ fid }}" class="btn sm" type="submit" title="Сохранить номер/контракт">Сохранить</button>
+        <form method="post" action="/admin/competitions/{{ comp.id }}/players/{{ cp.player_id }}/delete">
+          <input type="hidden" name="team_id" value="{{ ct.team_id }}">
+          <button class="btn sm danger" type="submit" title="Убрать из заявки">×</button>
+        </form>
+      </div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted" style="margin:0 0 12px">В заявке пока нет игроков.</p>{% endif %}
+
+  {% set team_pids = roster_players | selectattr('team_id','equalto',ct.team_id) | map(attribute='player_id') | list %}
+  <form method="post" action="/admin/competitions/{{ comp.id }}/players" class="toolbar" style="background:var(--surface-2);padding:12px;border-radius:10px">
+    <input type="hidden" name="team_id" value="{{ ct.team_id }}">
+    <div class="field" style="flex:1;min-width:180px"><label>Заявить игрока</label>
+      <select name="player_id">{% for p in all_players if p.id not in team_pids %}<option value="{{ p.id }}">{{ p.full_name }}</option>{% endfor %}</select>
+    </div>
+    <div class="field" style="width:90px"><label>Номер</label><input type="number" name="number"></div>
+    <div class="field"><label>Контракт</label><label class="switch"><input type="checkbox" name="contract"><span class="track"></span></label></div>
+    <button class="btn secondary" type="submit">Заявить</button>
+  </form>
+</div>
+
+<!-- Модалка массового добавления игроков в команду {{ ct.team.name }} -->
+<div class="modal-overlay" id="m-add-players-{{ ct.team_id }}">
+  <div class="modal">
+    <div class="modal-h"><h2>Игроки → {{ ct.team.name }}</h2><button type="button" class="x" onclick="closeModal('add-players-{{ ct.team_id }}')">✕</button></div>
+    <form method="post" action="/admin/competitions/{{ comp.id }}/players/bulk" style="display:flex;flex-direction:column;min-height:0">
+      <input type="hidden" name="team_id" value="{{ ct.team_id }}">
+      <div class="modal-body">
+        <input type="text" class="modal-search" placeholder="Поиск игрока…" oninput="filterPick(this)">
+        <div class="pick-list">
+          {% for p in all_players if p.id not in team_pids %}
+          <label class="pick-row" data-name="{{ p.full_name|lower }}">
+            <input type="checkbox" name="player_ids" value="{{ p.id }}">
+            <span>{{ p.full_name }}</span>{% if p.position %}<span class="faint">· {{ p.position }}</span>{% endif %}
+          </label>
+          {% else %}
+          <p class="muted" style="padding:10px">Все игроки уже заявлены за эту команду.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-f">
+        <button class="btn" type="submit">Готово</button>
+        <button class="btn secondary" type="button" onclick="closeModal('add-players-{{ ct.team_id }}')">Отмена</button>
+        <span class="muted" style="margin-left:auto;font-size:12.5px">Номера можно проставить после</span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+<!-- Матчи -->
+<div class="sectionbar"><h2>Матчи</h2></div>
+<div class="card">
+  {% if roster|length >= 2 %}
+  <form method="post" action="/admin/competitions/{{ comp.id }}/games" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+    <div class="field" style="margin:0"><label>Команда A</label><select name="team_a_id">{% for ct in roster %}<option value="{{ ct.team_id }}">{{ ct.team.name }}</option>{% endfor %}</select></div>
+    <div class="field" style="margin:0"><label>Команда B</label><select name="team_b_id">{% for ct in roster %}<option value="{{ ct.team_id }}">{{ ct.team.name }}</option>{% endfor %}</select></div>
+    <div class="field" style="margin:0"><label>Дата</label><input type="date" name="date" required></div>
+    <div class="field" style="margin:0"><label>Время</label><input type="time" name="time"></div>
+    <div class="field" style="margin:0"><label>Стадия</label><select name="stage">{% for s in stages %}<option value="{{ s.value }}">{{ s.value }}</option>{% endfor %}</select></div>
+    <button class="btn" type="submit">Создать матч</button>
+  </form>
+  {% else %}<p class="muted" style="margin:0">Добавьте минимум две команды, чтобы создавать матчи.</p>{% endif %}
+</div>
+
+{% if games %}
+<div class="card tight">
+  <table>
+    <thead><tr><th>Дата</th><th>Матч</th><th class="num">Счёт</th><th>Стадия</th><th></th></tr></thead>
+    <tbody>
+    {% for g in games %}
+    <tr>
+      <td class="muted">{{ g.date }} {{ g.time or '' }}</td>
+      <td>#{{ g.id }} · {{ g.team_a_id }} — {{ g.team_b_id }}
+        {% if g.video_url %}<a href="{{ g.video_url }}" target="_blank" title="Трансляция" style="margin-left:6px">📺</a>{% endif %}
+        {% if g.scan %}<a href="{{ g.scan }}" target="_blank" title="Скан протокола">📄</a>{% endif %}
+      </td>
+      <td class="num">{% if g.score_team_a is not none %}<b>{{ g.score_team_a }} : {{ g.score_team_b }}</b>{% else %}<span class="faint">—</span>{% endif %}</td>
+      <td><span class="pill {{ 'ok' if g.status.value == 'finished' else '' }}">{{ g.stage }}</span></td>
+      <td><div class="row-actions">
+        <a class="btn sm secondary" href="/admin/games/{{ g.id }}/edit">Изменить</a>
+        <a class="btn sm" href="/admin/games/{{ g.id }}/protocol">Протокол</a>
+        <form method="post" action="/admin/games/{{ g.id }}/delete" onsubmit="return confirm('Удалить матч?')"><button class="btn sm danger" type="submit">×</button></form>
+      </div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
