@@ -1,0 +1,36 @@
+# --- Виртуальные окружения: 100 МБ чужого Python (venv 3.13, образ 3.12) ---
+.venv/
+venv/
+
+# --- Секреты и локальные данные: не должны попасть в слой образа ---
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+_dev.db
+media/
+dev_media/
+
+# --- VCS / CI ---
+.git/
+.github/
+.gitignore
+
+# --- Кэши и мусор редакторов ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+.idea/
+.vscode/
+
+# --- Документация и разовые скрипты, не нужные в рантайме ---
+README.md
+API_FRONTEND.md
+players_import.json
+import_players.py
+seed.py
+tests/

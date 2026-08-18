@@ -34,13 +34,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Сессии нужны для логина в админ-панель (cookie)
-app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+# Сессии нужны для логина в админ-панель (cookie).
+# https_only в проде: cookie с admin_user_id не должна уходить по plain HTTP.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie="tots_session",
+    same_site="lax",
+    https_only=settings.is_prod,
+    max_age=7 * 24 * 3600,
+)
 
+# allow_credentials только при явном списке origin'ов: со "*" Starlette отражает
+# любой присланный Origin вместе с Access-Control-Allow-Credentials: true.
+_allow_any_origin = settings.cors_origins == ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_credentials=not _allow_any_origin,
     allow_methods=["*"],
     allow_headers=["*"],
 )

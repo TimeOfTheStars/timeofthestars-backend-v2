@@ -20,4 +20,8 @@ if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
 fi
 
 echo "Запуск приложения..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8002 --proxy-headers
+# 172.16.0.0/12 — шлюз docker-бриджа: именно его uvicorn видит как peer,
+# когда Caddy стучится на 127.0.0.1:8002 хоста. Только 127.0.0.1 здесь мало.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8002 \
+  --proxy-headers --forwarded-allow-ips="127.0.0.1,172.16.0.0/12" \
+  --no-server-header

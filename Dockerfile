@@ -17,6 +17,13 @@ COPY . .
 
 RUN chmod +x app.sh
 
+# Непривилегированный пользователь. Хостовый каталог медиа должен принадлежать
+# этому же UID: chown -R 10001:10001 /srv/tots/media
+RUN useradd --system --uid 10001 --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/media \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8002
 
 CMD ["sh", "./app.sh"]
