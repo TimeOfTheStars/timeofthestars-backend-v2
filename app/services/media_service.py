@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.models import MediaFile
@@ -79,8 +80,9 @@ async def save_upload(
         raise MediaError(f"Файл больше {settings.MAX_UPLOAD_MB} МБ")
 
     if content_type in ALLOWED_IMAGE_TYPES:
-        # сжимаем и переводим в WebP
-        content = _compress_image(content, MAX_DIM.get(kind, 1600))
+        # Сжатие и перекодирование в WebP — в пуле потоков: LANCZOS + method=6
+        # занимают 200-500 мс CPU и иначе блокируют весь event loop.
+        content = await run_in_threadpool(_compress_image, content, MAX_DIM.get(kind, 1600))
         content_type = "image/webp"
         ext = ".webp"
     else:
@@ -88,7 +90,7 @@ async def save_upload(
 
     filename = f"{secrets.token_hex(16)}{ext}"
     path = media_root() / filename
-    path.write_bytes(content)
+    await run_in_threadpool(path.write_bytes, content)
 
     record = MediaFile(
         filename=filename, content_type=content_type, size=len(content), kind=kind

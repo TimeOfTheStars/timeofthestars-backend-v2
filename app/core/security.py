@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from passlib.context import CryptContext
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 
@@ -14,6 +15,17 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
+
+
+# Асинхронные обёртки: bcrypt cost 12 — это 250-400 мс CPU, из async-контекста
+# его нельзя вызывать напрямую, иначе встаёт весь event loop.
+# Синхронные версии остаются для create_admin.py, который работает вне event loop.
+async def ahash_password(password: str) -> str:
+    return await run_in_threadpool(hash_password, password)
+
+
+async def averify_password(plain: str, hashed: str) -> bool:
+    return await run_in_threadpool(verify_password, plain, hashed)
 
 
 def create_access_token(subject: str, role: str, expires_minutes: int | None = None) -> str:

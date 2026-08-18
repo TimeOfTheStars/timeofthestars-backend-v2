@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password, verify_password
+from app.core.security import ahash_password, averify_password
 from app.models import User
 from app.schemas.auth import UserCreate, UserUpdate
 
@@ -24,7 +24,7 @@ async def list_users(db: AsyncSession) -> Sequence[User]:
 
 async def authenticate(db: AsyncSession, username: str, password: str) -> User | None:
     user = await get_by_username(db, username)
-    if user and user.is_active and verify_password(password, user.hashed_password):
+    if user and user.is_active and await averify_password(password, user.hashed_password):
         return user
     return None
 
@@ -32,7 +32,7 @@ async def authenticate(db: AsyncSession, username: str, password: str) -> User |
 async def create(db: AsyncSession, data: UserCreate) -> User:
     user = User(
         username=data.username,
-        hashed_password=hash_password(data.password),
+        hashed_password=await ahash_password(data.password),
         role=data.role,
         is_active=data.is_active,
     )
@@ -43,7 +43,7 @@ async def create(db: AsyncSession, data: UserCreate) -> User:
 
 async def update(db: AsyncSession, user: User, data: UserUpdate) -> User:
     if data.password is not None:
-        user.hashed_password = hash_password(data.password)
+        user.hashed_password = await ahash_password(data.password)
     if data.role is not None:
         user.role = data.role
     if data.is_active is not None:

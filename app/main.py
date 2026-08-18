@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,6 +69,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # Статика для загруженных файлов
 app.mount("/media", StaticFiles(directory=media_root()), name="media")
+
+# Ассеты админки (htmx). Монтируем в корневой /static, чтобы не пересекаться
+# с path-параметрами админского роутера (/admin/{...}).
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).parent / "admin" / "static"),
+    name="static",
+)
 
 app.include_router(api_router)
 app.include_router(admin_router)
