@@ -42,6 +42,7 @@ async def test_full_flow_standings_and_player_stats(client, auth):
     p1 = await _make_player(client, auth, "Иван Петров")
     p2 = await _make_player(client, auth, "Сергей Смирнов")
     p3 = await _make_player(client, auth, "Пётр Голкипер", "вратарь")
+    p4 = await _make_player(client, auth, "Олег Крайний")
 
     # соревнование
     r = await client.post(
@@ -58,7 +59,12 @@ async def test_full_flow_standings_and_player_stats(client, auth):
     comp = r.json()
 
     # состав
-    for pid, tid in [(p1["id"], a["id"]), (p3["id"], a["id"]), (p2["id"], b["id"])]:
+    for pid, tid in [
+        (p1["id"], a["id"]),
+        (p3["id"], a["id"]),
+        (p4["id"], a["id"]),
+        (p2["id"], b["id"]),
+    ]:
         rr = await client.post(
             f"/api/v1/competitions/{comp['id']}/players",
             json={"team_id": tid, "player_id": pid, "number": 9, "contract": True},
@@ -80,24 +86,47 @@ async def test_full_flow_standings_and_player_stats(client, auth):
     assert r.status_code == 201, r.text
     game = r.json()
 
-    # протокол: A 3 : 2 B, Иван 2+1, вратарь A пропустил 2
+    # Протокол: A 3 : 2 B. Голы и передачи задаются событиями таймлайна,
+    # в строках участия их больше не передают — сервер считает сам.
     r = await client.put(
         f"/api/v1/games/{game['id']}/protocol",
         json={
             "score_team_a": 3,
             "score_team_b": 2,
             "stat_lines": [
-                {"player_id": p1["id"], "team_id": a["id"], "goals": 2, "assists": 1},
+                {"player_id": p1["id"], "team_id": a["id"]},
+                {"player_id": p4["id"], "team_id": a["id"]},
                 {"player_id": p3["id"], "team_id": a["id"], "is_goalie": True,
                  "goals_against": 2, "saves": 20, "minutes_played": 60},
-                {"player_id": p2["id"], "team_id": b["id"], "goals": 2},
+                {"player_id": p2["id"], "team_id": b["id"]},
+            ],
+            "events": [
+                {"type": "goalie_change", "team_id": a["id"], "time_seconds": 0,
+                 "player_id": p3["id"]},
+                {"type": "goal", "team_id": a["id"], "time_seconds": 300,
+                 "player_id": p1["id"], "video_seconds": 2705},
+                {"type": "goal", "team_id": b["id"], "time_seconds": 900,
+                 "player_id": p2["id"]},
+                {"type": "goal", "team_id": a["id"], "time_seconds": 1500,
+                 "player_id": p1["id"]},
+                {"type": "goal", "team_id": a["id"], "time_seconds": 2700,
+                 "player_id": p4["id"], "assist1_player_id": p1["id"]},
+                {"type": "goal", "team_id": b["id"], "time_seconds": 3000,
+                 "player_id": p2["id"]},
             ],
         },
         headers=auth,
     )
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "finished"
-    assert len(r.json()["player_stats"]) == 3
+    assert len(r.json()["player_stats"]) == 4
+    # события вернулись отсортированными по времени
+    assert [e["time_seconds"] for e in r.json()["events"]] == [0, 300, 900, 1500, 2700, 3000]
+    # цифры выведены из событий, а не приняты извне
+    by_player = {s["player_id"]: s for s in r.json()["player_stats"]}
+    assert by_player[p1["id"]]["goals"] == 2
+    assert by_player[p1["id"]]["assists"] == 1
+    assert by_player[p4["id"]]["goals"] == 1
 
     # турнирная таблица
     r = await client.get(f"/api/v1/competitions/{comp['id']}/standings")

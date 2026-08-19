@@ -12,6 +12,8 @@ from app.schemas.competition import (
     UpdateRosterPlayerRequest,
 )
 from app.schemas.game import (
+    GameEventIn,
+    GameEventRead,
     GameCreate,
     GameRead,
     GameUpdate,

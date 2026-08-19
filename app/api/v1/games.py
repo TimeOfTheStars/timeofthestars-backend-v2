@@ -4,13 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_session, require_staff
 from app.schemas.game import (
     GameCreate,
+    GameEventRead,
     GameRead,
     GameUpdate,
     GameWithProtocol,
+    PlayerStatLineRead,
     ProtocolRequest,
 )
-from app.schemas.game import PlayerStatLineRead
-from app.schemas.player import PlayerRead
 from app.services import competition_service, game_service
 from app.services.competition_service import ValidationError
 
@@ -39,20 +39,14 @@ async def get_game(game_id: int, db: AsyncSession = Depends(get_session)):
     if game is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Матч не найден")
     result = GameWithProtocol.model_validate(game, from_attributes=True)
+    # Собираем через model_validate, а не поле за полем: иначе каждое новое поле
+    # схемы приходится дописывать ещё и здесь.
     result.player_stats = [
-        PlayerStatLineRead(
-            player_id=ps.player_id,
-            team_id=ps.team_id,
-            goals=ps.goals,
-            assists=ps.assists,
-            penalties=ps.penalties,
-            is_goalie=ps.is_goalie,
-            goals_against=ps.goals_against,
-            saves=ps.saves,
-            minutes_played=ps.minutes_played,
-            player=PlayerRead.model_validate(ps.player) if ps.player else None,
-        )
-        for ps in game.player_stats
+        PlayerStatLineRead.model_validate(ps, from_attributes=True) for ps in game.player_stats
+    ]
+    # Порядок таймлайна задан order_by у связи Game.events
+    result.events = [
+        GameEventRead.model_validate(ev, from_attributes=True) for ev in game.events
     ]
     return result
 

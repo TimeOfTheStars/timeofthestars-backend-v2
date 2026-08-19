@@ -5,13 +5,14 @@ from app.models.competition import (
 )
 from app.models.enums import (
     CompetitionType,
+    GameEventType,
     GameStage,
     GameStatus,
     MediaKind,
     PlayerPosition,
     UserRole,
 )
-from app.models.game import Game, GamePlayerStat
+from app.models.game import Game, GameEvent, GamePlayerStat
 from app.models.homepage import HomepageSettings
 from app.models.media import MediaFile
 from app.models.player import Player
@@ -27,11 +28,13 @@ __all__ = [
     "CompetitionPlayer",
     "Game",
     "GamePlayerStat",
+    "GameEvent",
     "HomepageSettings",
     "MediaFile",
     "UserRole",
     "PlayerPosition",
     "CompetitionType",
+    "GameEventType",
     "GameStage",
     "GameStatus",
     "MediaKind",

@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -6,10 +7,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.deps import current_admin, is_admin, render
 from app.db.session import get_session
-from app.models.enums import CompetitionType, GameStage, MediaKind, PlayerPosition, UserRole
+from app.models.enums import (
+    CompetitionType,
+    GameEventType,
+    GameStage,
+    MediaKind,
+    PlayerPosition,
+    UserRole,
+)
 from app.schemas.auth import UserCreate, UserUpdate
 from app.schemas.competition import CompetitionCreate, CompetitionUpdate
-from app.schemas.game import GameCreate, GameUpdate, PlayerStatLine, ProtocolRequest
+from app.schemas.game import (
+    GameCreate,
+    GameEventIn,
+    GameUpdate,
+    PlayerStatLine,
+    ProtocolRequest,
+)
 from app.schemas.player import PlayerCreate, PlayerUpdate
 from app.schemas.team import TeamCreate, TeamUpdate
 from app.services import (
@@ -22,6 +36,7 @@ from app.services import (
     team_service,
     user_service,
 )
+from app.services.clock import ClockParseError, format_clock, parse_clock, parse_video_time
 from app.services.competition_service import ValidationError
 
 router = APIRouter(prefix="/admin", include_in_schema=False)
@@ -630,6 +645,190 @@ async def game_delete(request: Request, game_id: int, db: AsyncSession = Depends
 
 
 # --- Протокол матча (ключевой экран) ---
+_EV_KEY = re.compile(r"^ev-(\d+)-([a-z0-9_]+)$")
+_PID_KEY = re.compile(r"^pid-(\d+)-(\d+)$")
+
+# Поля события в форме; порядок важен только для читаемости шаблона
+EVENT_FIELDS = (
+    "time",
+    "type",
+    "team_id",
+    "player_id",
+    "assist1_player_id",
+    "assist2_player_id",
+    "penalty_minutes",
+    "video_time",
+)
+
+
+def _indexed_rows(form, pattern: re.Pattern) -> list[dict[str, str]]:
+    """'ev-0-type' -> [{'type': ...}] в порядке индекса.
+
+    Пропуски в нумерации и произвольный порядок ключей в POST безопасны:
+    индекс — просто метка строки, JS её не переиспользует.
+    """
+    buckets: dict[int, dict[str, str]] = {}
+    for key in form.keys():
+        m = pattern.match(key)
+        if not m:
+            continue
+        value = form.get(key)
+        buckets.setdefault(int(m.group(1)), {})[m.group(2)] = (
+            value.strip() if isinstance(value, str) else ""
+        )
+    return [buckets[i] for i in sorted(buckets)]
+
+
+def _events_from_form(form) -> tuple[list[GameEventIn], list[str], list[dict[str, str]]]:
+    """Разбирает строки таймлайна.
+
+    Возвращает события, список ошибок и сырые строки — последние нужны, чтобы
+    при ошибке вернуть пользователю его же ввод, а не пустую форму.
+    """
+    events: list[GameEventIn] = []
+    errors: list[str] = []
+    raw_rows: list[dict[str, str]] = []
+
+    for row in _indexed_rows(form, _EV_KEY):
+        time_raw = row.get("time", "")
+        # полностью пустая заготовка — молча выбрасываем
+        if not time_raw and not row.get("player_id"):
+            continue
+        raw_rows.append(row)
+        label = f"Событие {len(raw_rows)} ({time_raw or 'без времени'})"
+
+        kind_raw = row.get("type") or GameEventType.goal.value
+        try:
+            kind = GameEventType(kind_raw)
+        except ValueError:
+            errors.append(f"{label}: неизвестный тип «{kind_raw}»")
+            continue
+
+        try:
+            seconds = parse_clock(time_raw)
+            video = parse_video_time(row.get("video_time"))
+        except ClockParseError as exc:
+            errors.append(f"{label}: время «{exc.args[0]}» непонятно, нужно ММ:СС")
+            continue
+        if seconds is None:
+            errors.append(f"{label}: не указано время")
+            continue
+        if not row.get("player_id"):
+            errors.append(f"{label}: не выбран игрок")
+            continue
+
+        def num(field: str) -> int | None:
+            value = row.get(field)
+            return int(value) if value and value.isdigit() else None
+
+        is_goal = kind in (GameEventType.goal, GameEventType.shootout_goal)
+        try:
+            events.append(
+                GameEventIn(
+                    type=kind,
+                    team_id=int(row["team_id"]),
+                    time_seconds=seconds,
+                    player_id=int(row["player_id"]),
+                    assist1_player_id=num("assist1_player_id") if is_goal else None,
+                    assist2_player_id=num("assist2_player_id") if is_goal else None,
+                    penalty_minutes=(
+                        num("penalty_minutes") if kind is GameEventType.penalty else None
+                    ),
+                    video_seconds=video if is_goal else None,
+                )
+            )
+        except (KeyError, ValueError) as exc:
+            errors.append(f"{label}: {exc}")
+    return events, errors, raw_rows
+
+
+def _lines_from_form(form) -> list[PlayerStatLine]:
+    """Строки участия. Голы/пас/штраф не читаем — они выводятся из событий."""
+
+    def _int(name: str) -> int:
+        value = form.get(name)
+        try:
+            return int(value) if value not in (None, "") else 0
+        except ValueError:
+            return 0
+
+    lines: list[PlayerStatLine] = []
+    for key in form.keys():
+        m = _PID_KEY.match(key)
+        if not m:
+            continue
+        pid, tid = int(m.group(1)), int(m.group(2))
+        prefix = f"stat-{pid}-{tid}"
+        is_goalie = form.get(f"{prefix}-is_goalie") is not None
+        lines.append(
+            PlayerStatLine(
+                player_id=pid,
+                team_id=tid,
+                is_goalie=is_goalie,
+                goals_against=_int(f"{prefix}-goals_against") if is_goalie else None,
+                saves=_int(f"{prefix}-saves") if is_goalie else None,
+                minutes_played=_int(f"{prefix}-minutes_played") if is_goalie else None,
+            )
+        )
+    return lines
+
+
+def _event_rows_from_db(game) -> list[dict[str, str]]:
+    """События из базы в том же строковом виде, что приходит из формы."""
+    rows = []
+    for ev in game.events:
+        rows.append(
+            {
+                "time": format_clock(ev.time_seconds),
+                "type": ev.type.value,
+                "team_id": str(ev.team_id),
+                "player_id": str(ev.player_id),
+                "assist1_player_id": str(ev.assist1_player_id or ""),
+                "assist2_player_id": str(ev.assist2_player_id or ""),
+                "penalty_minutes": str(ev.penalty_minutes or ""),
+                "video_time": format_clock(ev.video_seconds),
+            }
+        )
+    return rows
+
+
+async def _protocol_context(db, request, game, *, event_rows, existing, derived, errors=()):
+    roster_players = await competition_service.get_players(db, game.competition_id)
+    team_players: dict[int, list] = {game.team_a_id: [], game.team_b_id: []}
+    for cp in roster_players:
+        if cp.team_id in team_players:
+            team_players[cp.team_id].append(cp)
+    # Для селектов в JS: {team_id: [{id, label}]}
+    roster_json = {
+        str(tid): [
+            {
+                "id": cp.player_id,
+                "label": (f"#{cp.number} " if cp.number is not None else "") + cp.player.full_name,
+            }
+            for cp in players
+        ]
+        for tid, players in team_players.items()
+    }
+    return {
+        "game": game,
+        "team_a": await team_service.get(db, game.team_a_id),
+        "team_b": await team_service.get(db, game.team_b_id),
+        "team_players": team_players,
+        "roster_json": roster_json,
+        "event_rows": event_rows,
+        "event_types": [
+            (GameEventType.goal.value, "Гол"),
+            (GameEventType.shootout_goal.value, "Буллит"),
+            (GameEventType.penalty.value, "Штраф"),
+            (GameEventType.goalie_change.value, "Вратарь"),
+        ],
+        "existing": existing,
+        # {player_id: {goals, assists, penalties}} — только для показа
+        "derived": derived,
+        "errors": list(errors),
+    }
+
+
 @router.get("/games/{game_id}/protocol")
 async def protocol_page(request: Request, game_id: int, db: AsyncSession = Depends(get_session)):
     if r := _guard(request):
@@ -637,24 +836,22 @@ async def protocol_page(request: Request, game_id: int, db: AsyncSession = Depen
     game = await game_service.get_with_protocol(db, game_id)
     if game is None:
         return _redirect("/admin/competitions")
-    # игроки заявки по обеим командам
-    roster_players = await competition_service.get_players(db, game.competition_id)
-    team_players: dict[int, list] = {game.team_a_id: [], game.team_b_id: []}
-    for cp in roster_players:
-        if cp.team_id in team_players:
-            team_players[cp.team_id].append(cp)
-    existing = {(ps.player_id, ps.team_id): ps for ps in game.player_stats}
-    team_a = await team_service.get(db, game.team_a_id)
-    team_b = await team_service.get(db, game.team_b_id)
-    return render(
+    ctx = await _protocol_context(
+        db,
         request,
-        "protocol.html",
-        game=game,
-        team_a=team_a,
-        team_b=team_b,
-        team_players=team_players,
-        existing=existing,
+        game,
+        event_rows=_event_rows_from_db(game),
+        existing={(ps.player_id, ps.team_id): ps for ps in game.player_stats},
+        derived={
+            ps.player_id: {
+                "goals": ps.goals,
+                "assists": ps.assists,
+                "penalties": ps.penalties,
+            }
+            for ps in game.player_stats
+        },
     )
+    return render(request, "protocol.html", **ctx)
 
 
 @router.post("/games/{game_id}/protocol")
@@ -666,54 +863,42 @@ async def protocol_submit(request: Request, game_id: int, db: AsyncSession = Dep
         return _redirect("/admin/competitions")
 
     form = await request.form()
-    score_a = form.get("score_team_a")
-    score_b = form.get("score_team_b")
-    bullet = form.get("bullet_win_team_id")
+    events, errors, raw_event_rows = _events_from_form(form)
+    lines = _lines_from_form(form)
 
-    lines: list[PlayerStatLine] = []
-    # Поля приходят как stat-<player_id>-<team_id>-<field>
-    seen: set[tuple[int, int]] = set()
-    for key in form.keys():
-        if not key.startswith("pid-"):
-            continue
-        # маркерное поле наличия игрока: pid-<player>-<team>
-        _, pid, tid = key.split("-")
-        seen.add((int(pid), int(tid)))
+    def _opt_int(name: str) -> int | None:
+        value = form.get(name)
+        return int(value) if value not in (None, "") else None
 
-    def _int(name: str) -> int:
-        v = form.get(name)
-        try:
-            return int(v) if v not in (None, "") else 0
-        except ValueError:
-            return 0
-
-    for pid, tid in seen:
-        prefix = f"stat-{pid}-{tid}"
-        is_goalie = form.get(f"{prefix}-is_goalie") is not None
-        lines.append(
-            PlayerStatLine(
-                player_id=pid,
-                team_id=tid,
-                goals=_int(f"{prefix}-goals"),
-                assists=_int(f"{prefix}-assists"),
-                penalties=_int(f"{prefix}-penalties"),
-                is_goalie=is_goalie,
-                goals_against=_int(f"{prefix}-goals_against") if is_goalie else None,
-                saves=_int(f"{prefix}-saves") if is_goalie else None,
-                minutes_played=_int(f"{prefix}-minutes_played") if is_goalie else None,
-            )
+    if not errors:
+        payload = ProtocolRequest(
+            score_team_a=_opt_int("score_team_a"),
+            score_team_b=_opt_int("score_team_b"),
+            bullet_win_team_id=_opt_int("bullet_win_team_id"),
+            stat_lines=lines,
+            events=events,
         )
+        try:
+            await game_service.save_protocol(db, game, payload)
+        except ValidationError as exc:
+            errors = [str(exc)]
 
-    payload = ProtocolRequest(
-        score_team_a=int(score_a) if score_a not in (None, "") else None,
-        score_team_b=int(score_b) if score_b not in (None, "") else None,
-        bullet_win_team_id=int(bullet) if bullet not in (None, "") else None,
-        stat_lines=lines,
-    )
-    try:
-        await game_service.save_protocol(db, game, payload)
-    except ValidationError as exc:
-        return render(request, "error.html", message=str(exc))
+    if errors:
+        # get_session коммитит при обычном возврате, поэтому частично записанное
+        # надо откатить руками, иначе оно уедет в базу.
+        await db.rollback()
+        game = await game_service.get_with_protocol(db, game_id)
+        ctx = await _protocol_context(
+            db,
+            request,
+            game,
+            event_rows=raw_event_rows,
+            existing={(line.player_id, line.team_id): line for line in lines},
+            derived=game_service._derive_totals(events),
+            errors=errors,
+        )
+        return render(request, "protocol.html", **ctx)
+
     return _redirect(f"/admin/competitions/{game.competition_id}")
 
 

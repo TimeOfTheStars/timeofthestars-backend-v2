@@ -12,10 +12,30 @@
   .proto input[type=number]{width:58px;text-align:center;padding:6px}
   .proto tr.off{opacity:.42}
   .proto .gfields input:disabled{background:var(--line-2);color:var(--faint)}
+  .proto .derived{font-variant-numeric:tabular-nums;color:var(--faint)}
+  .proto .derived b{color:inherit}
+  .tl th, .tl td{padding:6px 8px;vertical-align:middle}
+  .tl input[type=text]{width:70px;text-align:center;padding:6px}
+  .tl input[type=number]{width:56px;text-align:center;padding:6px}
+  .tl select{padding:6px}
+  .tl td.hide > *{visibility:hidden}
+  .tl-actions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line)}
+  .hint{padding:0 20px 14px;color:var(--faint);font-size:13px}
+  .hint b{color:var(--text)}
+  .mismatch{color:#b4232a;font-weight:700}
   .savebar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 30px;margin:0 -30px -26px;display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(20,25,60,.05)}
 </style>
 {% endblock %}
 {% block content %}
+
+{% if errors %}
+<div class="card" style="border-color:#e6b0b4;background:#fdf3f4">
+  <b>Протокол не сохранён</b>
+  <ul style="margin:8px 0 0 18px">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  <div class="muted" style="margin-top:8px">Введённое ниже сохранено в форме — поправьте и отправьте снова.</div>
+</div>
+{% endif %}
+
 <form method="post" action="/admin/games/{{ game.id }}/protocol">
   <div class="card">
     <div class="score-head">
@@ -37,6 +57,54 @@
         <option value="{{ game.team_b_id }}" {{ 'selected' if game.bullet_win_team_id == game.team_b_id else '' }}>{{ team_b.name if team_b else game.team_b_id }}</option>
       </select>
     </div>
+    <div class="hint" style="text-align:center;padding-top:14px">
+      По событиям: <b><span id="tl-score">—</span></b> <span id="tl-so"></span>
+      <span id="tl-warn" class="mismatch" hidden>— не совпадает со счётом выше</span>
+    </div>
+  </div>
+
+  <div class="card tight">
+    <div class="card-h" style="padding:16px 20px 0">
+      <h2>Хронология</h2>
+      <span class="muted"><span id="tl-count">{{ event_rows|length }}</span> событий</span>
+    </div>
+    <table class="tl">
+      <thead><tr>
+        <th style="width:80px">Время</th><th>Тип</th><th>Команда</th><th>Игрок</th>
+        <th>Передача 1</th><th>Передача 2</th><th class="num">Мин</th><th>Видео</th><th></th>
+      </tr></thead>
+      <tbody id="ev-body" data-next="{{ event_rows|length }}">
+      {% for row in event_rows %}
+      <tr class="erow">
+        <td><input type="text" name="ev-{{ loop.index0 }}-time" class="t-clock" value="{{ row.time }}" placeholder="16:00"></td>
+        <td><select name="ev-{{ loop.index0 }}-type" class="t-type">
+          {% for value, label in event_types %}<option value="{{ value }}" {{ 'selected' if row.type == value else '' }}>{{ label }}</option>{% endfor %}
+        </select></td>
+        <td><select name="ev-{{ loop.index0 }}-team_id" class="t-team">
+          <option value="{{ game.team_a_id }}" {{ 'selected' if row.team_id == game.team_a_id|string else '' }}>{{ team_a.name if team_a else game.team_a_id }}</option>
+          <option value="{{ game.team_b_id }}" {{ 'selected' if row.team_id == game.team_b_id|string else '' }}>{{ team_b.name if team_b else game.team_b_id }}</option>
+        </select></td>
+        <td><select name="ev-{{ loop.index0 }}-player_id" data-role="player" data-value="{{ row.player_id }}"></select></td>
+        <td class="only-goal"><select name="ev-{{ loop.index0 }}-assist1_player_id" data-role="player" data-blank="1" data-value="{{ row.assist1_player_id }}"></select></td>
+        <td class="only-goal"><select name="ev-{{ loop.index0 }}-assist2_player_id" data-role="player" data-blank="1" data-value="{{ row.assist2_player_id }}"></select></td>
+        <td class="only-penalty num"><input type="number" min="1" name="ev-{{ loop.index0 }}-penalty_minutes" value="{{ row.penalty_minutes }}"></td>
+        <td class="only-goal"><input type="text" name="ev-{{ loop.index0 }}-video_time" value="{{ row.video_time }}" placeholder="45:05"></td>
+        <td class="num"><button type="button" class="btn sm secondary ev-del" title="Удалить">×</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="tl-actions">
+      <button type="button" class="btn sm" onclick="evAdd('goal')">+ Гол</button>
+      <button type="button" class="btn sm secondary" onclick="evAdd('penalty')">+ Штраф</button>
+      <button type="button" class="btn sm secondary" onclick="evAdd('goalie_change')">+ Вратарь</button>
+      <button type="button" class="btn sm secondary" onclick="evAdd('shootout_goal')">+ Буллит</button>
+      <button type="button" class="btn sm secondary" style="margin-left:auto" onclick="evSort()">↕ По времени</button>
+    </div>
+    <div class="hint">
+      Время — сквозное от начала матча, как в бумаге: <b>16:00</b>, <b>41:45</b>, <b>60:00</b>. Видео — смещение в записи матча.
+      Голы, передачи и штрафные минуты игроков считаются из этой таблицы, вводить их отдельно не нужно.
+    </div>
   </div>
 
   {% for tid, players in team_players.items() %}
@@ -49,18 +117,17 @@
     <table class="proto">
       <thead><tr>
         <th style="width:64px">Играл</th><th>Игрок</th>
-        <th class="num">Голы</th><th class="num">Пас</th><th class="num">Штраф</th>
+        <th class="num">Г+П+Штр</th>
         <th class="num">Вратарь</th><th class="num">Проп.</th><th class="num">Сейвы</th><th class="num">Мин</th>
       </tr></thead>
       <tbody>
       {% for cp in players %}
       {% set ex = existing.get((cp.player_id, tid)) %}
-      <tr class="prow {{ '' if ex else 'off' }}">
+      {% set d = derived.get(cp.player_id) %}
+      <tr class="prow {{ '' if ex else 'off' }}" data-pid="{{ cp.player_id }}">
         <td class="num"><input type="checkbox" class="played" name="pid-{{ cp.player_id }}-{{ tid }}" {{ 'checked' if ex else '' }}></td>
         <td><b>{{ cp.player.full_name }}</b> {% if cp.number is not none %}<span class="faint">#{{ cp.number }}</span>{% endif %}</td>
-        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-goals" value="{{ ex.goals if ex else 0 }}"></td>
-        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-assists" value="{{ ex.assists if ex else 0 }}"></td>
-        <td class="num"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-penalties" value="{{ ex.penalties if ex else 0 }}"></td>
+        <td class="num derived" data-derived="{{ cp.player_id }}">{{ d.goals if d else 0 }}+{{ d.assists if d else 0 }}+{{ d.penalties if d else 0 }}</td>
         <td class="num"><input type="checkbox" class="goalie" name="stat-{{ cp.player_id }}-{{ tid }}-is_goalie" {{ 'checked' if ex and ex.is_goalie else '' }}></td>
         <td class="num gfields"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-goals_against" value="{{ ex.goals_against if ex and ex.goals_against is not none else '' }}"></td>
         <td class="num gfields"><input type="number" min="0" name="stat-{{ cp.player_id }}-{{ tid }}-saves" value="{{ ex.saves if ex and ex.saves is not none else '' }}"></td>
@@ -78,12 +145,139 @@
   <div class="savebar">
     <button class="btn" type="submit">💾 Сохранить протокол</button>
     <a class="btn secondary" href="/admin/competitions/{{ game.competition_id }}">Отмена</a>
-    <span class="muted" style="margin-left:auto">Отметьте «Играл» у участников; счёт и статистика пересчитают таблицу автоматически.</span>
+    <span class="muted" style="margin-left:auto">Отметьте «Играл» у всех участников: по числу этих отметок считаются проведённые игры.</span>
   </div>
 </form>
 
+<template id="ev-tpl">
+  <tr class="erow">
+    <td><input type="text" name="ev-__I__-time" class="t-clock" placeholder="16:00"></td>
+    <td><select name="ev-__I__-type" class="t-type">
+      {% for value, label in event_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select></td>
+    <td><select name="ev-__I__-team_id" class="t-team">
+      <option value="{{ game.team_a_id }}">{{ team_a.name if team_a else game.team_a_id }}</option>
+      <option value="{{ game.team_b_id }}">{{ team_b.name if team_b else game.team_b_id }}</option>
+    </select></td>
+    <td><select name="ev-__I__-player_id" data-role="player"></select></td>
+    <td class="only-goal"><select name="ev-__I__-assist1_player_id" data-role="player" data-blank="1"></select></td>
+    <td class="only-goal"><select name="ev-__I__-assist2_player_id" data-role="player" data-blank="1"></select></td>
+    <td class="only-penalty num"><input type="number" min="1" name="ev-__I__-penalty_minutes" value="2"></td>
+    <td class="only-goal"><input type="text" name="ev-__I__-video_time" placeholder="45:05"></td>
+    <td class="num"><button type="button" class="btn sm secondary ev-del" title="Удалить">×</button></td>
+  </tr>
+</template>
+<script id="roster-data" type="application/json">{{ roster_json | tojson }}</script>
+
 <script>
 (function(){
+  var ROSTER = JSON.parse(document.getElementById('roster-data').textContent);
+  var body = document.getElementById('ev-body');
+  var next = Number(body.dataset.next || 0);
+  var TEAM_A = "{{ game.team_a_id }}";
+  var GOAL_TYPES = ['goal', 'shootout_goal'];
+
+  function toSec(v){
+    v = (v || '').trim();
+    var m = v.match(/^(\d+):(\d{1,2})$/);
+    if (m) return Number(m[1]) * 60 + Number(m[2]);
+    return /^\d+$/.test(v) ? Number(v) : 0;
+  }
+  function fillPlayers(sel, teamId){
+    var keep = sel.dataset.value || sel.value;
+    var blank = sel.dataset.blank ? '<option value=""></option>' : '';
+    sel.innerHTML = blank + (ROSTER[teamId] || []).map(function(p){
+      return '<option value="' + p.id + '">' + p.label + '</option>';
+    }).join('');
+    if (keep) sel.value = keep;
+    sel.dataset.value = '';
+  }
+  function syncRow(tr){
+    var kind = tr.querySelector('.t-type').value;
+    var isGoal = GOAL_TYPES.indexOf(kind) >= 0;
+    tr.querySelectorAll('.only-goal').forEach(function(td){ td.classList.toggle('hide', !isGoal); });
+    tr.querySelectorAll('.only-penalty').forEach(function(td){ td.classList.toggle('hide', kind !== 'penalty'); });
+  }
+  function recompute(){
+    var totals = {}, scored = {}, so = {};
+    function slot(pid){ return totals[pid] || (totals[pid] = [0,0,0]); }
+    body.querySelectorAll('tr.erow').forEach(function(tr){
+      var kind = tr.querySelector('.t-type').value;
+      var team = tr.querySelector('.t-team').value;
+      var pid = tr.querySelector('[data-role=player]').value;
+      if (!pid) return;
+      if (GOAL_TYPES.indexOf(kind) >= 0){
+        slot(pid)[0] += 1;
+        if (kind === 'shootout_goal'){ so[team] = (so[team] || 0) + 1; }
+        else { scored[team] = (scored[team] || 0) + 1; }
+        tr.querySelectorAll('[data-blank]').forEach(function(s){ if (s.value) slot(s.value)[1] += 1; });
+      } else if (kind === 'penalty'){
+        var min = Number(tr.querySelector('[name$="-penalty_minutes"]').value || 0);
+        slot(pid)[2] += min;
+      }
+    });
+    document.querySelectorAll('[data-derived]').forEach(function(cell){
+      var t = totals[cell.dataset.derived] || [0,0,0];
+      cell.innerHTML = t[0] + '+' + t[1] + '+' + t[2];
+      if (t[0] || t[1] || t[2]){
+        var row = cell.closest('tr'), played = row.querySelector('.played');
+        if (played && !played.checked){ played.checked = true; row.classList.remove('off'); }
+      }
+    });
+    var a = scored[TEAM_A] || 0, b = 0;
+    Object.keys(scored).forEach(function(k){ if (k !== TEAM_A) b = scored[k]; });
+    document.getElementById('tl-score').textContent = a + ' : ' + b;
+    var soA = so[TEAM_A] || 0, soB = 0;
+    Object.keys(so).forEach(function(k){ if (k !== TEAM_A) soB = so[k]; });
+    document.getElementById('tl-so').textContent = (soA || soB) ? ('(+' + soA + ':' + soB + ' по буллитам)') : '';
+    document.getElementById('tl-count').textContent = body.querySelectorAll('tr.erow').length;
+    var typedA = document.querySelector('[name=score_team_a]').value;
+    var typedB = document.querySelector('[name=score_team_b]').value;
+    var bad = (typedA !== '' && Number(typedA) !== a) || (typedB !== '' && Number(typedB) !== b);
+    document.getElementById('tl-warn').hidden = !bad;
+  }
+  function bind(tr){
+    var team = tr.querySelector('.t-team');
+    tr.querySelectorAll('[data-role=player]').forEach(function(s){ fillPlayers(s, team.value); });
+    team.addEventListener('change', function(){
+      tr.querySelectorAll('[data-role=player]').forEach(function(s){ fillPlayers(s, team.value); });
+      recompute();
+    });
+    tr.querySelector('.t-type').addEventListener('change', function(){ syncRow(tr); recompute(); });
+    tr.querySelector('.ev-del').addEventListener('click', function(){ tr.remove(); recompute(); });
+    tr.addEventListener('input', recompute);
+    tr.addEventListener('change', recompute);
+    tr.querySelectorAll('.t-clock').forEach(function(i){
+      i.addEventListener('blur', function(){          // 1600 -> 16:00, 16 -> 16:00
+        var v = i.value.trim();
+        if (/^\d{3,4}$/.test(v)) i.value = v.slice(0, -2) + ':' + v.slice(-2);
+        else if (/^\d{1,2}$/.test(v)) i.value = v + ':00';
+      });
+    });
+    syncRow(tr);
+  }
+  window.evAdd = function(kind){
+    var holder = document.createElement('tbody');
+    holder.innerHTML = document.getElementById('ev-tpl').innerHTML.replace(/__I__/g, next++);
+    var tr = holder.firstElementChild;
+    body.appendChild(tr);
+    tr.querySelector('.t-type').value = kind;
+    bind(tr);
+    tr.querySelector('.t-clock').focus();
+    recompute();
+  };
+  window.evSort = function(){
+    // переставляем только узлы: индексы в именах не трогаем, порядок внутри
+    // одной секунды сервер всё равно берёт из порядка отправки
+    Array.prototype.slice.call(body.children)
+      .map(function(tr){ return [toSec(tr.querySelector('.t-clock').value), tr]; })
+      .sort(function(x, y){ return x[0] - y[0]; })
+      .forEach(function(pair){ body.appendChild(pair[1]); });
+  };
+
+  body.querySelectorAll('tr.erow').forEach(bind);
+
+  // строки участия: вратарские поля и отметка «играл»
   function syncGoalie(row){
     var g = row.querySelector('.goalie');
     row.querySelectorAll('.gfields input').forEach(function(i){ i.disabled = !g.checked; });
@@ -93,13 +287,11 @@
     syncGoalie(row); syncPlayed(row);
     row.querySelector('.goalie').addEventListener('change', function(){ syncGoalie(row); });
     row.querySelector('.played').addEventListener('change', function(){ syncPlayed(row); });
-    // автоотметка «играл» при вводе любой статы
-    row.querySelectorAll('input[type=number]').forEach(function(i){
-      i.addEventListener('input', function(){
-        if (parseInt(i.value||'0',10) > 0){ var p = row.querySelector('.played'); if(!p.checked){ p.checked = true; syncPlayed(row);} }
-      });
-    });
   });
+  document.querySelectorAll('[name=score_team_a],[name=score_team_b]').forEach(function(i){
+    i.addEventListener('input', recompute);
+  });
+  recompute();
 })();
 </script>
 {% endblock %}

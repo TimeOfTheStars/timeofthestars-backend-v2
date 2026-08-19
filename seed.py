@@ -8,10 +8,15 @@ import asyncio
 import datetime as dt
 
 from app.db.session import async_session_maker
-from app.models.enums import CompetitionType, GameStage, UserRole
+from app.models.enums import CompetitionType, GameEventType, GameStage, UserRole
 from app.schemas.auth import UserCreate
 from app.schemas.competition import CompetitionCreate
-from app.schemas.game import GameCreate, PlayerStatLine, ProtocolRequest
+from app.schemas.game import (
+    GameCreate,
+    GameEventIn,
+    PlayerStatLine,
+    ProtocolRequest,
+)
 from app.schemas.player import PlayerCreate
 from app.schemas.team import TeamCreate
 from app.services import (
@@ -90,16 +95,49 @@ async def main() -> None:
                 score_team_a=3,
                 score_team_b=2,
                 stat_lines=[
-                    PlayerStatLine(player_id=players[0].id, team_id=teams[0].id, goals=2, assists=1),
-                    PlayerStatLine(player_id=players[1].id, team_id=teams[0].id, goals=1, penalties=2),
+                    PlayerStatLine(player_id=players[0].id, team_id=teams[0].id),
+                    PlayerStatLine(player_id=players[1].id, team_id=teams[0].id),
                     PlayerStatLine(
                         player_id=players[2].id, team_id=teams[0].id,
                         is_goalie=True, goals_against=2, saves=18, minutes_played=60,
                     ),
-                    PlayerStatLine(player_id=players[3].id, team_id=teams[1].id, goals=2),
+                    PlayerStatLine(player_id=players[3].id, team_id=teams[1].id),
                     PlayerStatLine(
                         player_id=players[5].id, team_id=teams[1].id,
                         is_goalie=True, goals_against=3, saves=21, minutes_played=60,
+                    ),
+                ],
+                # Голы и передачи считаются из таймлайна
+                events=[
+                    GameEventIn(
+                        type=GameEventType.goalie_change, team_id=teams[0].id,
+                        time_seconds=0, player_id=players[2].id,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.goal, team_id=teams[0].id,
+                        time_seconds=305, player_id=players[0].id,
+                        assist1_player_id=players[1].id, video_seconds=2705,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.goal, team_id=teams[1].id,
+                        time_seconds=980, player_id=players[3].id,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.penalty, team_id=teams[0].id,
+                        time_seconds=1510, player_id=players[1].id, penalty_minutes=2,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.goal, team_id=teams[0].id,
+                        time_seconds=2210, player_id=players[0].id,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.goal, team_id=teams[1].id,
+                        time_seconds=2890, player_id=players[3].id,
+                    ),
+                    GameEventIn(
+                        type=GameEventType.goal, team_id=teams[0].id,
+                        time_seconds=3400, player_id=players[1].id,
+                        assist1_player_id=players[0].id,
                     ),
                 ],
             ),

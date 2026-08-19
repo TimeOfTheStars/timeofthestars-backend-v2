@@ -171,6 +171,10 @@ async def test_admin_create_competition_and_protocol_flow(client):
     r = await client.get(f"/admin/games/{games[0]['id']}/protocol")
     assert r.status_code == 200
     assert "Сохранить протокол" in r.text
+    # на экране появился таймлайн с шаблоном строки события
+    assert "Хронология" in r.text
+    assert 'id="ev-tpl"' in r.text
+    assert 'id="roster-data"' in r.text
 
     # экран редактирования матча
     gid = games[0]["id"]
@@ -194,3 +198,136 @@ async def test_admin_create_competition_and_protocol_flow(client):
     assert g["team_a_id"] == teams[1]["id"]
     assert g["location"] == "Дворец спорта"
     assert g["video_url"] == "https://vkvideo.ru/abc"
+
+
+async def test_admin_protocol_form_roundtrip(client):
+    """Ввод протокола через форму админки: события парсятся, цифры выводятся."""
+    await client.post("/admin/login", data={"username": "admin", "password": "admin"})
+    for name in ("Вихрь", "Гроза"):
+        await client.post("/admin/teams", data={"name": name, "city": "Тверь"}, follow_redirects=True)
+    teams = (await client.get("/api/v1/teams")).json()["items"]
+    for full_name, position in (("Первый Бомбардир", "нападающий"), ("Второй Пасующий", "защитник")):
+        await client.post(
+            "/admin/players", data={"full_name": full_name, "position": position}, follow_redirects=True
+        )
+    players = (await client.get("/api/v1/players")).json()["items"]
+    await client.post(
+        "/admin/competitions",
+        data={"type": "tournament", "name": "Форма-кубок", "start_date": "2026-04-01"},
+        follow_redirects=True,
+    )
+    cid = (await client.get("/api/v1/competitions")).json()["items"][0]["id"]
+    for t in teams[:2]:
+        await client.post(
+            f"/admin/competitions/{cid}/teams", data={"team_id": t["id"]}, follow_redirects=True
+        )
+    for pl in players[:2]:
+        await client.post(
+            f"/admin/competitions/{cid}/players",
+            data={"team_id": teams[0]["id"], "player_id": pl["id"], "number": 7},
+            follow_redirects=True,
+        )
+    await client.post(
+        f"/admin/competitions/{cid}/games",
+        data={
+            "team_a_id": teams[0]["id"], "team_b_id": teams[1]["id"],
+            "date": "2026-04-05", "stage": "matches",
+        },
+        follow_redirects=True,
+    )
+    gid = (await client.get(f"/api/v1/competitions/{cid}/games")).json()[0]["id"]
+    scorer, helper = players[0]["id"], players[1]["id"]
+
+    form = {
+        "score_team_a": "1",
+        "score_team_b": "0",
+        "bullet_win_team_id": "",
+        f"pid-{scorer}-{teams[0]['id']}": "on",
+        f"pid-{helper}-{teams[0]['id']}": "on",
+        # время в человеческом виде — сервер сам переведёт в секунды
+        "ev-0-time": "16:00",
+        "ev-0-type": "goal",
+        "ev-0-team_id": str(teams[0]["id"]),
+        "ev-0-player_id": str(scorer),
+        "ev-0-assist1_player_id": str(helper),
+        "ev-0-video_time": "45:05",
+        # пустая заготовка строки должна молча выброситься
+        "ev-5-time": "",
+        "ev-5-type": "goal",
+        "ev-5-team_id": str(teams[0]["id"]),
+        "ev-5-player_id": "",
+        # дыра в нумерации не мешает
+        "ev-9-time": "41:45",
+        "ev-9-type": "penalty",
+        "ev-9-team_id": str(teams[0]["id"]),
+        "ev-9-player_id": str(helper),
+        "ev-9-penalty_minutes": "2",
+    }
+    r = await client.post(f"/admin/games/{gid}/protocol", data=form, follow_redirects=False)
+    assert r.status_code == 303, r.text
+
+    game = (await client.get(f"/api/v1/games/{gid}")).json()
+    assert [e["time_seconds"] for e in game["events"]] == [960, 2505]
+    goal = game["events"][0]
+    assert goal["video_seconds"] == 2705
+    assert goal["assist1_player_id"] == helper
+    stats = {s["player_id"]: s for s in game["player_stats"]}
+    assert stats[scorer]["goals"] == 1
+    assert stats[helper]["assists"] == 1
+    assert stats[helper]["penalties"] == 2
+
+
+async def test_admin_protocol_bad_time_preserves_input(client):
+    """Ошибка в одном поле не должна стирать набранный протокол."""
+    await client.post("/admin/login", data={"username": "admin", "password": "admin"})
+    for name in ("Комета", "Метель"):
+        await client.post("/admin/teams", data={"name": name}, follow_redirects=True)
+    teams = (await client.get("/api/v1/teams")).json()["items"]
+    await client.post("/admin/players", data={"full_name": "Игрок Тестовый"}, follow_redirects=True)
+    pid = (await client.get("/api/v1/players")).json()["items"][0]["id"]
+    await client.post(
+        "/admin/competitions",
+        data={"type": "tournament", "name": "Кубок ошибок", "start_date": "2026-05-01"},
+        follow_redirects=True,
+    )
+    cid = (await client.get("/api/v1/competitions")).json()["items"][0]["id"]
+    for t in teams[:2]:
+        await client.post(
+            f"/admin/competitions/{cid}/teams", data={"team_id": t["id"]}, follow_redirects=True
+        )
+    await client.post(
+        f"/admin/competitions/{cid}/players",
+        data={"team_id": teams[0]["id"], "player_id": pid, "number": 11},
+        follow_redirects=True,
+    )
+    await client.post(
+        f"/admin/competitions/{cid}/games",
+        data={
+            "team_a_id": teams[0]["id"], "team_b_id": teams[1]["id"],
+            "date": "2026-05-05", "stage": "matches",
+        },
+        follow_redirects=True,
+    )
+    gid = (await client.get(f"/api/v1/competitions/{cid}/games")).json()[0]["id"]
+
+    r = await client.post(
+        f"/admin/games/{gid}/protocol",
+        data={
+            "score_team_a": "1",
+            "score_team_b": "0",
+            f"pid-{pid}-{teams[0]['id']}": "on",
+            "ev-0-time": "16;00",          # опечатка
+            "ev-0-type": "goal",
+            "ev-0-team_id": str(teams[0]["id"]),
+            "ev-0-player_id": str(pid),
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 200, "должна вернуться форма, а не редирект"
+    assert "16;00" in r.text, "введённое значение должно вернуться в форму"
+    assert "непонятно" in r.text
+    # в базу ничего не записалось
+    game = (await client.get(f"/api/v1/games/{gid}")).json()
+    assert game["events"] == []
+    assert game["player_stats"] == []
+    assert game["score_team_a"] is None

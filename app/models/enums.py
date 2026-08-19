@@ -29,6 +29,18 @@ class GameStatus(StrEnum):
     finished = "finished"
 
 
+class GameEventType(StrEnum):
+    """Событие матча для таймлайна."""
+
+    goal = "goal"
+    # Гол в серии буллитов: в счёт основного времени не входит, но в личную
+    # статистику игрока идёт. Отдельный тип нужен, чтобы сумма голевых событий
+    # не противоречила score_team_a/score_team_b.
+    shootout_goal = "shootout_goal"
+    penalty = "penalty"
+    goalie_change = "goalie_change"
+
+
 class MediaKind(StrEnum):
     player_photo = "player_photo"
     team_logo = "team_logo"
