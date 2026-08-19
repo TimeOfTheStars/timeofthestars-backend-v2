@@ -74,21 +74,30 @@
         <th>Передача 1</th><th>Передача 2</th><th class="num">Мин</th><th>Видео</th><th></th>
       </tr></thead>
       <tbody id="ev-body" data-next="{{ event_rows|length }}">
+      {# Варианты игроков рендерим и на сервере: без JS форма всё равно рабочая #}
+      {% macro player_options(team_id, chosen, blank=false) %}
+        {% if blank %}<option value=""></option>{% endif %}
+        {% for cp in team_players.get(team_id, []) %}
+        <option value="{{ cp.player_id }}" {{ 'selected' if chosen == cp.player_id|string else '' }}>{% if cp.number is not none %}#{{ cp.number }} {% endif %}{{ cp.player.full_name }}</option>
+        {% endfor %}
+      {% endmacro %}
       {% for row in event_rows %}
+      {% set i = loop.index0 %}
+      {% set row_team = row.team_id|int if row.team_id else game.team_a_id %}
       <tr class="erow">
-        <td><input type="text" name="ev-{{ loop.index0 }}-time" class="t-clock" value="{{ row.time }}" placeholder="16:00"></td>
-        <td><select name="ev-{{ loop.index0 }}-type" class="t-type">
+        <td><input type="text" name="ev-{{ i }}-time" class="t-clock" value="{{ row.time }}" placeholder="16:00"></td>
+        <td><select name="ev-{{ i }}-type" class="t-type">
           {% for value, label in event_types %}<option value="{{ value }}" {{ 'selected' if row.type == value else '' }}>{{ label }}</option>{% endfor %}
         </select></td>
-        <td><select name="ev-{{ loop.index0 }}-team_id" class="t-team">
-          <option value="{{ game.team_a_id }}" {{ 'selected' if row.team_id == game.team_a_id|string else '' }}>{{ team_a.name if team_a else game.team_a_id }}</option>
-          <option value="{{ game.team_b_id }}" {{ 'selected' if row.team_id == game.team_b_id|string else '' }}>{{ team_b.name if team_b else game.team_b_id }}</option>
+        <td><select name="ev-{{ i }}-team_id" class="t-team">
+          <option value="{{ game.team_a_id }}" {{ 'selected' if row_team == game.team_a_id else '' }}>{{ team_a.name if team_a else game.team_a_id }}</option>
+          <option value="{{ game.team_b_id }}" {{ 'selected' if row_team == game.team_b_id else '' }}>{{ team_b.name if team_b else game.team_b_id }}</option>
         </select></td>
-        <td><select name="ev-{{ loop.index0 }}-player_id" data-role="player" data-value="{{ row.player_id }}"></select></td>
-        <td class="only-goal"><select name="ev-{{ loop.index0 }}-assist1_player_id" data-role="player" data-blank="1" data-value="{{ row.assist1_player_id }}"></select></td>
-        <td class="only-goal"><select name="ev-{{ loop.index0 }}-assist2_player_id" data-role="player" data-blank="1" data-value="{{ row.assist2_player_id }}"></select></td>
-        <td class="only-penalty num"><input type="number" min="1" name="ev-{{ loop.index0 }}-penalty_minutes" value="{{ row.penalty_minutes }}"></td>
-        <td class="only-goal"><input type="text" name="ev-{{ loop.index0 }}-video_time" value="{{ row.video_time }}" placeholder="45:05"></td>
+        <td><select name="ev-{{ i }}-player_id" data-role="player" data-value="{{ row.player_id }}">{{ player_options(row_team, row.player_id) }}</select></td>
+        <td class="only-goal"><select name="ev-{{ i }}-assist1_player_id" data-role="player" data-blank="1" data-value="{{ row.assist1_player_id }}">{{ player_options(row_team, row.assist1_player_id, true) }}</select></td>
+        <td class="only-goal"><select name="ev-{{ i }}-assist2_player_id" data-role="player" data-blank="1" data-value="{{ row.assist2_player_id }}">{{ player_options(row_team, row.assist2_player_id, true) }}</select></td>
+        <td class="only-penalty num"><input type="number" min="1" name="ev-{{ i }}-penalty_minutes" value="{{ row.penalty_minutes }}"></td>
+        <td class="only-goal"><input type="text" name="ev-{{ i }}-video_time" value="{{ row.video_time }}" placeholder="45:05"></td>
         <td class="num"><button type="button" class="btn sm secondary ev-del" title="Удалить">×</button></td>
       </tr>
       {% endfor %}

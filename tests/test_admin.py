@@ -276,6 +276,14 @@ async def test_admin_protocol_form_roundtrip(client):
     assert stats[helper]["assists"] == 1
     assert stats[helper]["penalties"] == 2
 
+    # экран открывается заново с заполненным таймлайном, и выбор игрока
+    # отрисован на сервере — форма работоспособна и без JS
+    r = await client.get(f"/admin/games/{gid}/protocol")
+    assert r.status_code == 200
+    assert 'value="16:00"' in r.text
+    assert 'value="41:45"' in r.text
+    assert f'value="{scorer}" selected' in r.text
+
 
 async def test_admin_protocol_bad_time_preserves_input(client):
     """Ошибка в одном поле не должна стирать набранный протокол."""
