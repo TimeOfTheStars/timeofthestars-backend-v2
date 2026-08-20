@@ -5,15 +5,19 @@
 <div class="card tight">
   {% if competitions %}
   <table>
-    <thead><tr><th>Название</th><th>Тип</th><th>Период</th><th>Локация</th><th></th></tr></thead>
+    <thead><tr><th style="width:64px"></th><th>Название</th><th>Тип</th><th>Период</th><th>Локация</th><th></th></tr></thead>
     <tbody>
     {% for c in competitions %}
     <tr onclick="location='/admin/competitions/{{ c.id }}'" style="cursor:pointer">
+      <td>{% if c.logo_url %}<img class="logo-img" src="{{ c.logo_url }}" alt="">{% else %}<span class="pill">🏆</span>{% endif %}</td>
       <td><b>{{ c.name }}</b></td>
       <td><span class="pill primary">{{ c.type }}</span></td>
       <td class="muted">{{ c.start_date }} — {{ c.end_date or '…' }}</td>
       <td class="muted">{{ c.location or '—' }}</td>
-      <td><div class="row-actions"><a class="btn sm secondary" href="/admin/competitions/{{ c.id }}">Открыть →</a></div></td>
+      <td><div class="row-actions">
+        <a class="btn sm secondary" href="/admin/competitions/{{ c.id }}/edit">Изменить</a>
+        <a class="btn sm secondary" href="/admin/competitions/{{ c.id }}">Открыть →</a>
+      </div></td>
     </tr>
     {% endfor %}
     </tbody>

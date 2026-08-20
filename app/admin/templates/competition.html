@@ -11,22 +11,28 @@
 <div class="grid c2">
   <!-- Параметры -->
   <div class="card">
-    <h2>Параметры</h2>
-    <form method="post" action="/admin/competitions/{{ comp.id }}/edit">
-      <div class="field"><label>Название</label><input type="text" name="name" value="{{ comp.name }}"></div>
-      <div class="field"><label>Локация</label><input type="text" name="location" value="{{ comp.location or '' }}"></div>
-      <div class="field"><label>Победитель</label>
-        <select name="winner_team_id">
-          <option value="">— не определён —</option>
-          {% for ct in roster %}<option value="{{ ct.team_id }}" {{ 'selected' if comp.winner_team_id == ct.team_id else '' }}>{{ ct.team.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="grid c2" style="margin-bottom:8px">
-        <label class="check"><input type="checkbox" name="show_playoff_bracket" {{ 'checked' if comp.show_playoff_bracket else '' }}> Турнирная сетка</label>
-        <label class="check"><input type="checkbox" name="show_best_players" {{ 'checked' if comp.show_best_players else '' }}> Лучшие игроки</label>
-      </div>
-      <div class="actions"><button class="btn" type="submit">Сохранить</button></div>
-    </form>
+    <div class="card-h" style="padding:0 0 14px"><h2>Параметры</h2>
+      <a class="btn sm" href="/admin/competitions/{{ comp.id }}/edit">Изменить</a>
+    </div>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      {% if comp.logo_url %}<img class="logo-img" style="height:64px;flex:none" src="{{ comp.logo_url }}" alt="">{% endif %}
+      <table style="margin:0">
+        <tbody>
+          <tr><td class="muted">Тип</td><td><span class="pill primary">{{ comp.type }}</span></td></tr>
+          <tr><td class="muted">Период</td><td>{{ comp.start_date }} — {{ comp.end_date or '…' }}</td></tr>
+          <tr><td class="muted">Локация</td><td>{{ comp.location or '—' }}</td></tr>
+          <tr><td class="muted">Победитель</td><td>
+            {% set win = roster | selectattr('team_id', 'equalto', comp.winner_team_id) | first %}
+            {{ win.team.name if win else '— не определён —' }}
+          </td></tr>
+          <tr><td class="muted">На сайте</td><td>
+            {% if comp.show_playoff_bracket %}<span class="pill">сетка</span>{% endif %}
+            {% if comp.show_best_players %}<span class="pill">лучшие игроки</span>{% endif %}
+            {% if not comp.show_playoff_bracket and not comp.show_best_players %}<span class="muted">ничего не показываем</span>{% endif %}
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Таблица -->

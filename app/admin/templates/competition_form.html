@@ -1,23 +1,49 @@
 {% extends "base.html" %}
-{% block heading %}Новое соревнование{% endblock %}
-{% block crumbs %}<a href="/admin/competitions">Соревнования</a> / новое{% endblock %}
+{% block heading %}{{ 'Редактирование соревнования' if comp else 'Новое соревнование' }}{% endblock %}
+{% block crumbs %}<a href="/admin/competitions">Соревнования</a> / {{ comp.name if comp else 'новое' }}{% endblock %}
 {% block content %}
-<div class="card" style="max-width:620px">
-  <form method="post" action="/admin/competitions">
-    <div class="field"><label>Название *</label><input type="text" name="name" required autofocus></div>
+<div class="card" style="max-width:660px">
+  <form method="post" action="{{ ('/admin/competitions/' ~ comp.id ~ '/edit') if comp else '/admin/competitions' }}" enctype="multipart/form-data">
+    <div class="field"><label>Название *</label><input type="text" name="name" value="{{ comp.name if comp else '' }}" required autofocus></div>
     <div class="grid c2">
       <div class="field"><label>Тип *</label>
-        <select name="type">{% for t in types %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}</select>
+        <select name="type">
+          {% for t in types %}<option value="{{ t.value }}" {{ 'selected' if comp and comp.type == t else '' }}>{{ t.value }}</option>{% endfor %}
+        </select>
       </div>
-      <div class="field"><label>Локация</label><input type="text" name="location"></div>
+      <div class="field"><label>Локация</label><input type="text" name="location" value="{{ comp.location if comp and comp.location else '' }}"></div>
     </div>
     <div class="grid c2">
-      <div class="field"><label>Дата начала *</label><input type="date" name="start_date" required></div>
-      <div class="field"><label>Дата окончания</label><input type="date" name="end_date"></div>
+      <div class="field"><label>Дата начала *</label><input type="date" name="start_date" value="{{ comp.start_date if comp else '' }}" required></div>
+      <div class="field"><label>Дата окончания</label><input type="date" name="end_date" value="{{ comp.end_date if comp and comp.end_date else '' }}"></div>
     </div>
+
+    <div class="field">
+      <label>Логотип</label>
+      <div style="display:flex;gap:14px;align-items:center">
+        {% if comp and comp.logo_url %}<img class="logo-img" style="height:52px" src="{{ comp.logo_url }}">{% endif %}
+        <input type="file" name="logo" accept="image/*">
+      </div>
+      <div class="hint">Загрузится на сервер и будет доступен по /media/… (ужмётся до 512 px){% if comp and comp.logo_url %} · текущий сохранится, если не выбрать новый{% endif %}</div>
+    </div>
+
+    {% if comp %}
+    <div class="field"><label>Победитель</label>
+      <select name="winner_team_id">
+        <option value="">— не определён —</option>
+        {% for ct in roster %}<option value="{{ ct.team_id }}" {{ 'selected' if comp.winner_team_id == ct.team_id else '' }}>{{ ct.team.name }}</option>{% endfor %}
+      </select>
+      <div class="hint">Выбирается только из команд, заявленных в это соревнование.</div>
+    </div>
+    <div class="grid c2" style="margin-bottom:8px">
+      <label class="check"><input type="checkbox" name="show_playoff_bracket" {{ 'checked' if comp.show_playoff_bracket else '' }}> Показывать турнирную сетку</label>
+      <label class="check"><input type="checkbox" name="show_best_players" {{ 'checked' if comp.show_best_players else '' }}> Показывать лучших игроков</label>
+    </div>
+    {% endif %}
+
     <div class="actions">
-      <button class="btn" type="submit">Создать</button>
-      <a class="btn secondary" href="/admin/competitions">Отмена</a>
+      <button class="btn" type="submit">{{ 'Сохранить' if comp else 'Создать' }}</button>
+      <a class="btn secondary" href="{{ ('/admin/competitions/' ~ comp.id) if comp else '/admin/competitions' }}">Отмена</a>
     </div>
   </form>
 </div>

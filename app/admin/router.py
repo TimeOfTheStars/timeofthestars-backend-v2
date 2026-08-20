@@ -348,7 +348,9 @@ async def competitions_page(request: Request, db: AsyncSession = Depends(get_ses
 async def competitions_new(request: Request):
     if r := _guard(request):
         return r
-    return render(request, "competition_form.html", types=list(CompetitionType))
+    return render(
+        request, "competition_form.html", comp=None, roster=[], types=list(CompetitionType)
+    )
 
 
 @router.post("/competitions")
@@ -359,10 +361,13 @@ async def competitions_create(
     start_date: str = Form(...),
     end_date: str = Form(""),
     location: str = Form(""),
+    logo_url: str = Form(""),
+    logo: UploadFile | None = None,
     db: AsyncSession = Depends(get_session),
 ):
     if r := _guard(request):
         return r
+    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo)
     comp = await competition_service.create(
         db,
         CompetitionCreate(
@@ -371,9 +376,30 @@ async def competitions_create(
             start_date=dt.date.fromisoformat(start_date),
             end_date=dt.date.fromisoformat(end_date) if end_date else None,
             location=location or None,
+            logo_url=uploaded or logo_url or None,
         ),
     )
     return _redirect(f"/admin/competitions/{comp.id}")
+
+
+@router.get("/competitions/{competition_id}/edit")
+async def competitions_edit_page(
+    request: Request, competition_id: int, db: AsyncSession = Depends(get_session)
+):
+    if r := _guard(request):
+        return r
+    comp = await competition_service.get(db, competition_id)
+    if comp is None:
+        return _redirect("/admin/competitions")
+    # победителя выбираем только из заявленных команд
+    roster = await competition_service.get_roster(db, competition_id)
+    return render(
+        request,
+        "competition_form.html",
+        comp=comp,
+        roster=roster,
+        types=list(CompetitionType),
+    )
 
 
 @router.get("/competitions/{competition_id}")
@@ -410,7 +436,12 @@ async def competition_edit(
     request: Request,
     competition_id: int,
     name: str = Form(...),
+    type: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
     location: str = Form(""),
+    logo_url: str = Form(""),
+    logo: UploadFile | None = None,
     show_playoff_bracket: bool = Form(False),
     show_best_players: bool = Form(False),
     winner_team_id: str = Form(""),
@@ -419,21 +450,33 @@ async def competition_edit(
     if r := _guard(request):
         return r
     comp = await competition_service.get(db, competition_id)
-    if comp:
-        try:
-            await competition_service.update(
-                db,
-                comp,
-                CompetitionUpdate(
-                    name=name,
-                    location=location or None,
-                    show_playoff_bracket=show_playoff_bracket,
-                    show_best_players=show_best_players,
-                    winner_team_id=int(winner_team_id) if winner_team_id else None,
-                ),
-            )
-        except ValidationError as exc:
-            return render(request, "error.html", message=str(exc))
+    if comp is None:
+        return _redirect("/admin/competitions")
+
+    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo)
+    # update() применяет только явно переданные поля (exclude_unset), поэтому
+    # собираем набор целиком, а не доопределяем атрибуты после конструктора
+    fields: dict = {
+        "name": name,
+        "location": location or None,
+        "end_date": dt.date.fromisoformat(end_date) if end_date else None,
+        "show_playoff_bracket": show_playoff_bracket,
+        "show_best_players": show_best_players,
+        "winner_team_id": int(winner_team_id) if winner_team_id else None,
+    }
+    if type:
+        fields["type"] = CompetitionType(type)
+    if start_date:
+        fields["start_date"] = dt.date.fromisoformat(start_date)
+    new_logo = uploaded or (logo_url or None)
+    if new_logo:
+        # пустое поле файла означает «оставить текущий логотип»
+        fields["logo_url"] = new_logo
+
+    try:
+        await competition_service.update(db, comp, CompetitionUpdate(**fields))
+    except ValidationError as exc:
+        return render(request, "error.html", message=str(exc))
     return _redirect(f"/admin/competitions/{competition_id}")
 
 

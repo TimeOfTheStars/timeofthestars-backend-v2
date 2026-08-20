@@ -339,3 +339,110 @@ async def test_admin_protocol_bad_time_preserves_input(client):
     assert game["events"] == []
     assert game["player_stats"] == []
     assert game["score_team_a"] is None
+
+
+def _small_png() -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.new("RGB", (700, 700), (30, 80, 160))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+async def test_admin_competition_edit_and_logo(client):
+    """Соревнование можно отредактировать целиком и поставить ему логотип."""
+    await client.post("/admin/login", data={"username": "admin", "password": "admin"})
+    await client.post("/admin/teams", data={"name": "Ястребы"}, follow_redirects=True)
+    team_id = (await client.get("/api/v1/teams")).json()["items"][0]["id"]
+    await client.post(
+        "/admin/competitions",
+        data={"type": "tournament", "name": "Кубок черновой", "start_date": "2026-06-01"},
+        follow_redirects=True,
+    )
+    cid = (await client.get("/api/v1/competitions")).json()["items"][0]["id"]
+    await client.post(
+        f"/admin/competitions/{cid}/teams", data={"team_id": team_id}, follow_redirects=True
+    )
+
+    # в списке появилась кнопка редактирования
+    r = await client.get("/admin/competitions")
+    assert r.status_code == 200
+    assert f'href="/admin/competitions/{cid}/edit"' in r.text
+
+    # страница редактирования открывается и показывает текущие значения
+    r = await client.get(f"/admin/competitions/{cid}/edit")
+    assert r.status_code == 200
+    assert "Редактирование соревнования" in r.text
+    assert 'value="Кубок черновой"' in r.text
+    assert 'value="2026-06-01"' in r.text
+    assert 'name="logo"' in r.text
+
+    # правим всё, включая тип, даты и логотип
+    r = await client.post(
+        f"/admin/competitions/{cid}/edit",
+        data={
+            "name": "Чемпионат имени себя",
+            "type": "championship",
+            "start_date": "2026-09-15",
+            "end_date": "2027-04-30",
+            "location": "Ярославль",
+            "winner_team_id": str(team_id),
+            "show_best_players": "on",
+        },
+        files={"logo": ("logo.png", _small_png(), "image/png")},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+
+    comp = (await client.get(f"/api/v1/competitions/{cid}")).json()
+    assert comp["name"] == "Чемпионат имени себя"
+    assert comp["type"] == "championship"
+    assert comp["start_date"] == "2026-09-15"
+    assert comp["end_date"] == "2027-04-30"
+    assert comp["location"] == "Ярославль"
+    assert comp["show_best_players"] is True
+    assert comp["show_playoff_bracket"] is False
+    assert comp["logo_url"] and comp["logo_url"].startswith("/media/")
+    assert comp["logo_url"].endswith(".webp"), "логотип должен ужаться в webp"
+
+    # логотип виден на детальной странице и в списке
+    r = await client.get(f"/admin/competitions/{cid}")
+    assert comp["logo_url"] in r.text
+    assert "Изменить" in r.text
+    r = await client.get("/admin/competitions")
+    assert comp["logo_url"] in r.text
+
+    # повторное сохранение без файла не должно стирать логотип
+    r = await client.post(
+        f"/admin/competitions/{cid}/edit",
+        data={
+            "name": "Чемпионат имени себя",
+            "type": "championship",
+            "start_date": "2026-09-15",
+            "location": "Ярославль",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    again = (await client.get(f"/api/v1/competitions/{cid}")).json()
+    assert again["logo_url"] == comp["logo_url"], "логотип потерялся при сохранении без файла"
+    # пустая дата окончания означает «убрать»
+    assert again["end_date"] is None
+
+
+async def test_admin_competition_create_with_logo(client):
+    """Логотип можно приложить сразу при создании."""
+    await client.post("/admin/login", data={"username": "admin", "password": "admin"})
+    r = await client.post(
+        "/admin/competitions",
+        data={"type": "tournament", "name": "Кубок с гербом", "start_date": "2026-07-01"},
+        files={"logo": ("emblem.png", _small_png(), "image/png")},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    comp = (await client.get("/api/v1/competitions")).json()["items"][0]
+    assert comp["name"] == "Кубок с гербом"
+    assert comp["logo_url"] and comp["logo_url"].endswith(".webp")
