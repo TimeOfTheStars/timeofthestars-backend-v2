@@ -39,6 +39,9 @@ class GameEventType(StrEnum):
     shootout_goal = "shootout_goal"
     penalty = "penalty"
     goalie_change = "goalie_change"
+    # Вратарь снят с площадки. player_id — тот, кто УШЁЛ (в goalie_change,
+    # наоборот, тот, кто вышел). Хранится как обычное событие со временем.
+    empty_net = "empty_net"
 
 
 class MediaKind(StrEnum):

@@ -160,6 +160,44 @@ async def test_goalie_change_requires_goalie_flag(client, auth):
     assert "не отмечен вратарём" in r.json()["detail"]
 
 
+async def test_empty_net_event(client, auth):
+    """Пустые ворота: player_id — вратарь, который ушёл с площадки."""
+    env = await _setup(client, auth)
+    r = await _save(
+        client, auth, env,
+        [
+            {"type": "goalie_change", "team_id": env["a"]["id"], "time_seconds": 0,
+             "player_id": env["keeper"]["id"]},
+            {"type": "empty_net", "team_id": env["a"]["id"], "time_seconds": 2880,
+             "player_id": env["keeper"]["id"]},
+            {"type": "goalie_change", "team_id": env["a"]["id"], "time_seconds": 2890,
+             "player_id": env["keeper"]["id"]},
+        ],
+    )
+    assert r.status_code == 200, r.text
+    events = r.json()["events"]
+    assert [e["type"] for e in events] == ["goalie_change", "empty_net", "goalie_change"]
+    # у события есть обычный период, штрафа и передач нет
+    empty = events[1]
+    assert empty["period"] == 3
+    assert empty["penalty_minutes"] is None
+    assert empty["assist1_player_id"] is None
+    # на статистику не влияет
+    stats = {s["player_id"]: s for s in r.json()["player_stats"]}
+    assert stats[env["keeper"]["id"]]["goals"] == 0
+
+
+async def test_empty_net_requires_goalie(client, auth):
+    env = await _setup(client, auth)
+    r = await _save(
+        client, auth, env,
+        [{"type": "empty_net", "team_id": env["a"]["id"], "time_seconds": 2880,
+          "player_id": env["scorer"]["id"]}],
+    )
+    assert r.status_code == 400
+    assert "не отмечен вратарём" in r.json()["detail"]
+
+
 async def test_player_without_stat_line_is_rejected(client, auth):
     env = await _setup(client, auth)
     env["lines"] = [line for line in env["lines"] if line["player_id"] != env["scorer"]["id"]]

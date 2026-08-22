@@ -80,6 +80,9 @@ async def delete(db: AsyncSession, game: Game) -> None:
 
 # Верхняя граница игрового времени берётся из модели
 GOAL_TYPES = frozenset({GameEventType.goal, GameEventType.shootout_goal})
+# У обоих событий player_id — вратарь: в goalie_change тот, кто вышел,
+# в empty_net тот, кто ушёл с площадки.
+GOALIE_TYPES = frozenset({GameEventType.goalie_change, GameEventType.empty_net})
 
 
 def _derive_totals(events: Iterable) -> dict[int, dict[str, int]]:
@@ -157,9 +160,11 @@ def _validate_events(
             if ev.type is GameEventType.penalty:
                 if not ev.penalty_minutes:
                     raise ValidationError(f"{where}: укажите штрафные минуты")
-            elif ev.type is GameEventType.goalie_change:
+            elif ev.type in GOALIE_TYPES:
                 if ev.penalty_minutes is not None:
-                    raise ValidationError(f"{where}: штрафные минуты не относятся к смене вратаря")
+                    raise ValidationError(
+                        f"{where}: штрафные минуты не относятся к событиям вратаря"
+                    )
                 if not main.is_goalie:
                     raise ValidationError(
                         f"{where}: игрок {ev.player_id} не отмечен вратарём в протоколе"

@@ -32,12 +32,12 @@ GET /api/v1/games/{id}
 | Поле | Тип | Смысл |
 |---|---|---|
 | `id` | `number` | идентификатор события |
-| `type` | `"goal" \| "shootout_goal" \| "penalty" \| "goalie_change"` | вид события |
+| `type` | `"goal" \| "shootout_goal" \| "penalty" \| "goalie_change" \| "empty_net"` | вид события |
 | `team_id` | `number` | команда, к которой относится событие |
 | `time_seconds` | `number` | **сквозное** игровое время от начала матча: `960` = 16:00, `3600` = 60:00 |
 | `period` | `number \| null` | 1–3 по двадцать минут, `4` — овертайм, **`null` у `shootout_goal`** |
 | `sort_order` | `number` | разводит события с одинаковым временем; для сортировки уже применён |
-| `player_id` | `number` | гол — автор, удаление — оштрафованный, смена вратаря — **кто вышел** на лёд |
+| `player_id` | `number` | гол — автор, удаление — оштрафованный, `goalie_change` — **кто вышел** на лёд, `empty_net` — **кто ушёл** |
 | `player` | `Player \| null` | тот же игрок объектом, с именем и фото — за именами ходить не надо |
 | `assist1_player_id`, `assist2_player_id` | `number \| null` | только у голов |
 | `assist1`, `assist2` | `Player \| null` | ассистенты объектами |
@@ -63,7 +63,12 @@ grip, photo_url }`. Теоретически может быть `null`, под�
 комментария про производные цифры.
 
 ```ts
-export type GameEventType = "goal" | "shootout_goal" | "penalty" | "goalie_change";
+export type GameEventType =
+  | "goal"
+  | "shootout_goal"
+  | "penalty"
+  | "goalie_change"   // вратарь вышел на лёд
+  | "empty_net";      // вратаря сняли, пустые ворота
 
 export interface GameEvent {
   id: number;
@@ -72,7 +77,7 @@ export interface GameEvent {
   time_seconds: number;               // сквозное игровое время от начала матча
   period: number | null;              // 1–3, 4 = овертайм, null у shootout_goal
   sort_order: number;                 // сортировка уже применена сервером
-  player_id: number;                  // автор гола / оштрафованный / вышедший вратарь
+  player_id: number;                  // автор гола / оштрафованный / вышедший или ушедший вратарь
   player: Player | null;
   assist1_player_id: number | null;
   assist2_player_id: number | null;
@@ -248,12 +253,14 @@ const to = e.penalty_end_seconds != null ? clock(e.penalty_end_seconds) : null;
 команды. В начале матча приходят две смены с `time_seconds: 0` — по одной на команду.
 
 ```ts
+// null означает «пустые ворота»: либо до первой смены, либо после empty_net
 function goalieAt(events: GameEvent[], teamId: number, at: number): Player | null {
   let current: Player | null = null;
   for (const e of events) {
-    if (e.type !== "goalie_change" || e.team_id !== teamId) continue;
+    if (e.team_id !== teamId) continue;
     if (e.time_seconds > at) break;
-    current = e.player;
+    if (e.type === "goalie_change") current = e.player;
+    else if (e.type === "empty_net") current = null;
   }
   return current;
 }
@@ -278,7 +285,9 @@ function goalieAt(events: GameEvent[], teamId: number, at: number): Player | nul
 6. **У матчей без хронологии `events` пустой** (`[]`), а числа в `player_stats` при этом могут
    быть заполнены — они остались от прежнего ручного ввода. Пустой таймлайн у сыгранного
    матча со счётом — нормальная ситуация, обработайте её.
-7. **`goalie_change.player_id` — вышедший**, а не заменённый.
+7. **`goalie_change.player_id` — вышедший**, а не заменённый. У `empty_net` наоборот — это
+   вратарь, которого **сняли** с площадки; следующий `goalie_change` той же команды означает,
+   что он (или другой) вернулся в ворота.
 8. **`video_seconds` только у голов.** У удалений и смен вратаря он всегда `null`, даже если
    момент в видео существует.
 9. **Время сквозное, а не внутри периода.** Гол во втором периоде на 5-й минуте — это
@@ -297,7 +306,8 @@ function goalieAt(events: GameEvent[], teamId: number, at: number): Player | nul
 - **кодов нарушений и «игровой ситуации»** у удаления — только минуты;
 - **ссылки на видео у каждого события** — только смещение в секундах плюс одно
   `Game.video_url` на матч;
-- **того, кто ушёл** при смене вратаря — выводится из предыдущей смены;
+- **того, кто ушёл** при обычной смене вратаря — выводится из предыдущей смены (для снятия
+  вратаря есть отдельный тип `empty_net`);
 - **времени на льду у игроков** — `minutes_played` есть только у вратарей и только суммарно;
 - **разбивки счёта по периодам отдельным полем** — считается из событий (см. рецепт выше);
 - **зрителей, тренеров, лучших игроков матча** — в схеме этого нет. «Лучшие игроки» есть
