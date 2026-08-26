@@ -1,100 +1,76 @@
 # TIME OF THE STARS — backend v2
 
-Бэкенд хоккейной лиги «TIME OF THE STARS». Полное переписывание прежнего бэкенда:
-единая сущность соревнований, поматчевый протокол как единственный источник статистики,
-JWT-авторизация с ролями, удобная кастомная админ-панель и хранение файлов на сервере.
+Бэкенд и админ-панель хоккейной лиги «TIME OF THE STARS»: команды, игроки,
+соревнования, протоколы матчей с таймлайном, турнирная таблица и личная статистика.
+
+**В бою:** https://api.timeofthestars.ru · Swagger — `/docs` · админка — `/admin`
+
+## 📚 Документация
+
+Полная документация — в каталоге **[`docs/`](docs/)**:
+
+| Документ | О чём |
+|---|---|
+| [docs/README.md](docs/README.md) | оглавление и точки входа по роли |
+| [Архитектура](docs/architecture.md) | слои, ключевые решения и почему они такие |
+| [Модель данных](docs/data-model.md) | таблицы, связи, перечисления, инварианты |
+| [API](docs/api.md) | справочник REST, авторизация, соглашения |
+| [Админ-панель](docs/admin.md) | экраны и ввод протокола матча |
+| [Деплой](docs/deployment.md) | сервер, выкатка, бэкапы, TLS |
+| [Разработка](docs/development.md) | локальный запуск, тесты, миграции, стиль |
+| [Эксплуатация](docs/operations.md) | правила ведения данных, диагностика |
+
+Контракт для фронтенда лежит отдельно: [API_FRONTEND.md](API_FRONTEND.md) и
+[API_FRONTEND_TIMELINE.md](API_FRONTEND_TIMELINE.md).
 
 ## Стек
 
-- **FastAPI** (async) + **Uvicorn**
-- **PostgreSQL** + **SQLAlchemy 2.0** (typed, async) + **asyncpg**
-- **Alembic** — миграции
-- **Pydantic v2** — схемы
-- **PyJWT** + **passlib[bcrypt]** — авторизация
-- Админка: **Jinja2 + HTMX** (сервер-сайд, без отдельного SPA)
+FastAPI (async) + Uvicorn · PostgreSQL 16 + SQLAlchemy 2.0 (typed, async) + asyncpg ·
+Alembic · Pydantic v2 · PyJWT + passlib[bcrypt] · Pillow · админка на Jinja2 без
+сборки и без SPA · Docker Compose, Caddy на хосте.
 
-## Архитектура (ключевое)
+## Архитектура в трёх пунктах
 
-- **Единый источник истины — сырые данные** (`games`, `game_events` + `game_player_stats`).
-  Голы, передачи и штрафные минуты игроков выводятся из событий матча при сохранении
-  протокола; вручную вводятся только участие и вратарские цифры.
-  Турнирная таблица и личная статистика **вычисляются на лету** (SQL-агрегация),
-  отдельных счётчиков не храним — нечему рассинхронизироваться.
-- **Никаких событийных хуков / фоновых тасков** — вся логика синхронна, в сервисном слое.
-- `Competition` объединяет прежние «чемпионат» и «турнир» (поле `type`).
-- Один матч принадлежит одному соревнованию (FK `games.competition_id`).
+- **Считаем, а не храним.** Турнирная таблица и статистика игроков выводятся SQL-агрегацией
+  при чтении. Счётчиков в базе нет — рассинхронизироваться нечему.
+- **События матча — источник истины.** Голы, передачи и штрафные минуты игрока выводятся
+  из `game_events` при сохранении протокола; руками вводятся только участие и вратарские цифры.
+- **Логика в сервисном слое.** Ручки API и админка вызывают один и тот же сервис.
+  Ни фоновых задач, ни событийных хуков, ни кэша.
+
+Подробнее и с обоснованиями — [docs/architecture.md](docs/architecture.md).
+
+## Быстрый старт
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+API — http://localhost:8002, Swagger — `/docs`, админка — `/admin`. Миграции
+применяются автоматически при старте; администратор создаётся из `ADMIN_USERNAME`
+и `ADMIN_PASSWORD`, если они заданы в `.env`.
+
+Без Docker и с тестами — [docs/development.md](docs/development.md).
+
+```bash
+pytest        # 47 тестов, временный SQLite, PostgreSQL не нужен
+```
 
 ## Структура
 
 ```
 app/
   core/        # config, security (JWT, bcrypt)
-  db/          # Base, session (async)
-  models/      # SQLAlchemy 2.0 модели
+  db/          # Base, async session
+  models/      # SQLAlchemy 2.0
   schemas/     # Pydantic v2
-  services/    # бизнес-логика
-  api/v1/      # REST-роутеры (auth, teams, players, competitions, games, media, homepage)
-  admin/       # кастомная админка (router + Jinja2 templates)
+  services/    # бизнес-логика — единственная точка правил
+  api/v1/      # REST: auth, teams, players, competitions, games, media, homepage
+  admin/       # админка: router + Jinja2 templates
   main.py
 alembic/       # миграции
+docs/          # документация
 tests/         # pytest
-seed.py        # демо-данные
-create_admin.py
-```
-
-## Запуск через Docker (рекомендуется)
-
-```bash
-cp .env.example .env   # при желании поправьте значения
-docker compose up --build
-```
-
-- API: http://localhost:8002  · Swagger: http://localhost:8002/docs
-- Админка: http://localhost:8002/admin  (по умолчанию `admin` / `admin`)
-- Миграции применяются автоматически; администратор создаётся из `ADMIN_USERNAME/PASSWORD`.
-
-## Локальный запуск (без Docker)
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env          # укажите доступ к локальному PostgreSQL
-
-alembic upgrade head          # создать схему
-python create_admin.py --username admin --password admin --role admin
-python seed.py                # (опционально) демо-данные
-uvicorn app.main:app --reload --port 8002
-```
-
-## Тесты
-
-```bash
-pytest          # использует временный SQLite, PostgreSQL не нужен
-```
-
-## Авторизация
-
-- `POST /api/v1/auth/login` (form: `username`, `password`) → `{access_token, role}`.
-- Заголовок `Authorization: Bearer <token>` для записи.
-- Роли: `admin` (всё, включая пользователей) и `manager` (контент). Чтение публичное.
-
-## Основные эндпоинты
-
-| Метод | Путь | Назначение |
-|------|------|-----------|
-| GET/POST/PUT/DELETE | `/api/v1/teams`, `/players`, `/competitions` | справочники (пагинация, поиск) |
-| POST/DELETE | `/api/v1/competitions/{id}/teams`, `/players` | состав соревнования |
-| GET | `/api/v1/competitions/{id}/standings` | турнирная таблица (на лету) |
-| GET | `/api/v1/competitions/{id}/players` | игроки соревнования со статистикой |
-| GET | `/api/v1/competitions/{id}/best-players` | лучшие игроки |
-| GET/PUT | `/api/v1/games/{id}` · `/games/{id}/protocol` | матч и протокол (box-score) |
-| GET | `/api/v1/players/{id}/stats` | статистика игрока: карьера + по соревнованиям/командам |
-| POST | `/api/v1/media` | загрузка файла (отдаётся на `/media/...`) |
-| GET/PUT | `/api/v1/homepage` | настройки главного экрана |
-
-## Миграции
-
-```bash
-alembic revision --autogenerate -m "описание"
-alembic upgrade head
+seed.py  create_admin.py
 ```
