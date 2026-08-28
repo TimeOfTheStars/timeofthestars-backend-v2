@@ -1,6 +1,7 @@
 from app.schemas.auth import LoginRequest, TokenResponse, UserCreate, UserRead, UserUpdate
 from app.schemas.common import Page
 from app.schemas.competition import (
+    CompetitionBrief,
     CompetitionCreate,
     CompetitionPlayerWithStats,
     CompetitionRead,
@@ -14,6 +15,8 @@ from app.schemas.competition import (
 from app.schemas.game import (
     GameEventIn,
     GameEventRead,
+    GameTeamStatIn,
+    GameTeamStatRead,
     GameCreate,
     GameRead,
     GameUpdate,
@@ -21,7 +24,12 @@ from app.schemas.game import (
     ProtocolRequest,
     GameWithProtocol,
 )
-from app.schemas.homepage import HomepageRead, HomepageUpdate
+from app.schemas.homepage import (
+    HomepageBlockIn,
+    HomepageBlockRead,
+    HomepageRead,
+    HomepageUpdate,
+)
 from app.schemas.media import MediaRead
 from app.schemas.player import PlayerCreate, PlayerRead, PlayerUpdate
 from app.schemas.stats import (
@@ -41,7 +49,9 @@ __all__ = [
     "CompetitionRosterTeam", "CompetitionRosterPlayer", "CompetitionPlayerWithStats",
     "AddTeamRequest", "AddPlayerRequest", "UpdateRosterPlayerRequest",
     "GameCreate", "GameRead", "GameUpdate", "PlayerStatLine", "ProtocolRequest", "GameWithProtocol",
-    "HomepageRead", "HomepageUpdate",
+    "GameEventIn", "GameEventRead", "GameTeamStatIn", "GameTeamStatRead",
+    "CompetitionBrief",
+    "HomepageRead", "HomepageUpdate", "HomepageBlockIn", "HomepageBlockRead",
     "MediaRead",
     "StandingRow", "PlayerStatTotals", "PlayerStatsBreakdown", "BestPlayer",
 ]

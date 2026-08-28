@@ -63,6 +63,9 @@ class Game(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="(GameEvent.time_seconds, GameEvent.sort_order, GameEvent.id)",
     )
+    team_stats: Mapped[list["GameTeamStat"]] = relationship(
+        back_populates="game", cascade="all, delete-orphan", order_by="GameTeamStat.id"
+    )
 
     def __repr__(self) -> str:
         return f"Game(id={self.id}, {self.team_a_id} vs {self.team_b_id})"
@@ -94,6 +97,35 @@ class GamePlayerStat(Base, TimestampMixin):
 
     game: Mapped["Game"] = relationship(back_populates="player_stats")
     player = relationship("Player")
+    team = relationship("Team")
+
+
+class GameTeamStat(Base, TimestampMixin):
+    """Командные итоги матча: броски, вбрасывания, реализация.
+
+    Штрафных минут здесь нет — они выводятся из событий матча (см. game_events),
+    хранить их вторым местом значило бы завести второй источник истины.
+    Реализация хранится готовым процентом: на табло лиги её считают по-разному
+    (то от всех бросков, то от бросков в створ), и вывести её формулой нельзя.
+    """
+
+    __tablename__ = "game_team_stats"
+    __table_args__ = (
+        UniqueConstraint("game_id", "team_id", name="uq_game_team"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+
+    shots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    shots_on_goal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    faceoffs_won: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conversion_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    game: Mapped["Game"] = relationship(back_populates="team_stats")
     team = relationship("Team")
 
 

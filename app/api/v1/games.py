@@ -6,6 +6,7 @@ from app.schemas.game import (
     GameCreate,
     GameEventRead,
     GameRead,
+    GameTeamStatRead,
     GameUpdate,
     GameWithProtocol,
     PlayerStatLineRead,
@@ -47,6 +48,15 @@ async def get_game(game_id: int, db: AsyncSession = Depends(get_session)):
     # Порядок таймлайна задан order_by у связи Game.events
     result.events = [
         GameEventRead.model_validate(ev, from_attributes=True) for ev in game.events
+    ]
+    # Штраф по командам не хранится, а считается из событий — досыпаем его в
+    # командные итоги, чтобы фронт получил все цифры «итогов матча» разом.
+    penalties = game_service.team_penalty_minutes(game.events)
+    result.team_stats = [
+        GameTeamStatRead.model_validate(ts, from_attributes=True).model_copy(
+            update={"penalty_minutes": penalties.get(ts.team_id, 0)}
+        )
+        for ts in game.team_stats
     ]
     return result
 

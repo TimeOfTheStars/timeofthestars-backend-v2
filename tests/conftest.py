@@ -14,12 +14,23 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from sqlalchemy import event
+
 from app.db.base import Base
 from app.db.session import async_session_maker, engine
 from app.main import app
 from app.schemas.auth import UserCreate
 from app.models.enums import UserRole
 from app.services import user_service
+
+
+# SQLite по умолчанию не проверяет внешние ключи, а боевой PostgreSQL проверяет.
+# Без этого ON DELETE CASCADE в тестах молча не срабатывает.
+@event.listens_for(engine.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @pytest_asyncio.fixture

@@ -1,28 +1,50 @@
 {% extends "base.html" %}
 {% block heading %}Главный экран сайта{% endblock %}
 {% block content %}
-<div class="card" style="max-width:620px">
-  <p class="muted" style="margin-top:0">Что показывать посетителям на главной странице сайта лиги.</p>
+<div class="card" style="max-width:760px">
+  <p class="muted" style="margin-top:0">
+    До трёх блоков на главной странице сайта — таблицы и сетки плей-офф в том порядке,
+    в каком они здесь идут. Пустой слот пропускается.
+  </p>
+
+  {% if error %}
+  <div class="card" style="border-color:#e6b0b4;background:#fdf3f4;margin-bottom:16px">
+    <b>Не сохранено</b>
+    <div class="muted" style="margin-top:6px">{{ error }}</div>
+  </div>
+  {% endif %}
+
   <form method="post" action="/admin/homepage">
-    <div class="field">
-      <label class="check"><input type="checkbox" name="show_bracket" {{ 'checked' if cfg.show_bracket else '' }}> Показывать турнирную сетку</label>
+    {% for slot in slots %}
+    {% set i = loop.index %}
+    <div class="field" style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px">
+      <div class="muted" style="margin-bottom:8px">Блок {{ i }}</div>
+      <div class="row" style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1 1 180px">
+          <label>Что показывать</label>
+          <select name="block-{{ i }}-type">
+            <option value="">— не показывать —</option>
+            <option value="standings" {{ 'selected' if slot.type == 'standings' else '' }}>Турнирная таблица</option>
+            <option value="bracket" {{ 'selected' if slot.type == 'bracket' else '' }}>Сетка плей-офф</option>
+          </select>
+        </div>
+        <div style="flex:1 1 240px">
+          <label>Соревнование</label>
+          <select name="block-{{ i }}-competition_id">
+            <option value="">—</option>
+            {% for c in competitions %}
+            <option value="{{ c.id }}" {{ 'selected' if slot.competition_id == c.id else '' }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="flex:1 1 240px">
+          <label>Заголовок <span class="muted">(необязательно)</span></label>
+          <input type="text" name="block-{{ i }}-title" value="{{ slot.title }}" placeholder="по умолчанию — название соревнования">
+        </div>
+      </div>
     </div>
-    <div class="field"><label>Сетка из соревнования</label>
-      <select name="bracket_competition_id">
-        <option value="">—</option>
-        {% for c in competitions %}<option value="{{ c.id }}" {{ 'selected' if cfg.bracket_competition_id == c.id else '' }}>{{ c.name }}</option>{% endfor %}
-      </select>
-    </div>
-    <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
-    <div class="field">
-      <label class="check"><input type="checkbox" name="show_standings" {{ 'checked' if cfg.show_standings else '' }}> Показывать турнирную таблицу</label>
-    </div>
-    <div class="field"><label>Таблица из соревнования</label>
-      <select name="standings_competition_id">
-        <option value="">—</option>
-        {% for c in competitions %}<option value="{{ c.id }}" {{ 'selected' if cfg.standings_competition_id == c.id else '' }}>{{ c.name }}</option>{% endfor %}
-      </select>
-    </div>
+    {% endfor %}
+
     <div class="actions"><button class="btn" type="submit">Сохранить</button></div>
   </form>
 </div>

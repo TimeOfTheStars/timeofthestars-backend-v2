@@ -3,6 +3,7 @@ import re
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.deps import current_admin, is_admin, render
@@ -11,19 +12,23 @@ from app.models.enums import (
     CompetitionType,
     GameEventType,
     GameStage,
+    HomepageBlockType,
     MediaKind,
     PlayerPosition,
     UserRole,
 )
+from app.models.homepage import MAX_HOMEPAGE_BLOCKS
 from app.schemas.auth import UserCreate, UserUpdate
 from app.schemas.competition import CompetitionCreate, CompetitionUpdate
 from app.schemas.game import (
     GameCreate,
     GameEventIn,
+    GameTeamStatIn,
     GameUpdate,
     PlayerStatLine,
     ProtocolRequest,
 )
+from app.schemas.homepage import HomepageBlockIn
 from app.schemas.player import PlayerCreate, PlayerUpdate
 from app.schemas.team import TeamCreate, TeamUpdate
 from app.services import (
@@ -816,6 +821,48 @@ def _lines_from_form(form) -> list[PlayerStatLine]:
     return lines
 
 
+def _team_stats_from_form(form, game) -> tuple[list[GameTeamStatIn], list[str]]:
+    """Командные итоги: по одной строке на команду. Пустая строка не сохраняется."""
+    rows: list[GameTeamStatIn] = []
+    errors: list[str] = []
+    for team_id in (game.team_a_id, game.team_b_id):
+        values = {}
+        for field in ("shots", "shots_on_goal", "faceoffs_won", "conversion_percent"):
+            raw = (form.get(f"ts-{team_id}-{field}") or "").strip()
+            if raw == "":
+                values[field] = None
+                continue
+            try:
+                values[field] = int(raw)
+            except ValueError:
+                errors.append(f"Командные итоги: «{raw}» — не число")
+                values[field] = None
+        if any(v is not None for v in values.values()):
+            try:
+                rows.append(GameTeamStatIn(team_id=team_id, **values))
+            except PydanticValidationError:
+                errors.append(
+                    "Командные итоги: броски и вбрасывания не могут быть отрицательными, "
+                    "реализация — от 0 до 100"
+                )
+    return rows, errors
+
+
+def _team_stats_rows(game) -> dict[int, dict[str, str]]:
+    """Командные итоги из базы в строковом виде — как их отдаёт форма."""
+    return {
+        ts.team_id: {
+            "shots": str(ts.shots if ts.shots is not None else ""),
+            "shots_on_goal": str(ts.shots_on_goal if ts.shots_on_goal is not None else ""),
+            "faceoffs_won": str(ts.faceoffs_won if ts.faceoffs_won is not None else ""),
+            "conversion_percent": str(
+                ts.conversion_percent if ts.conversion_percent is not None else ""
+            ),
+        }
+        for ts in game.team_stats
+    }
+
+
 def _event_rows_from_db(game) -> list[dict[str, str]]:
     """События из базы в том же строковом виде, что приходит из формы."""
     rows = []
@@ -835,7 +882,9 @@ def _event_rows_from_db(game) -> list[dict[str, str]]:
     return rows
 
 
-async def _protocol_context(db, request, game, *, event_rows, existing, derived, errors=()):
+async def _protocol_context(
+    db, request, game, *, event_rows, existing, derived, team_stats=None, errors=()
+):
     roster_players = await competition_service.get_players(db, game.competition_id)
     team_players: dict[int, list] = {game.team_a_id: [], game.team_b_id: []}
     for cp in roster_players:
@@ -869,6 +918,7 @@ async def _protocol_context(db, request, game, *, event_rows, existing, derived,
         "existing": existing,
         # {player_id: {goals, assists, penalties}} — только для показа
         "derived": derived,
+        "team_stats": team_stats or {},
         "errors": list(errors),
     }
 
@@ -894,6 +944,7 @@ async def protocol_page(request: Request, game_id: int, db: AsyncSession = Depen
             }
             for ps in game.player_stats
         },
+        team_stats=_team_stats_rows(game),
     )
     return render(request, "protocol.html", **ctx)
 
@@ -909,6 +960,8 @@ async def protocol_submit(request: Request, game_id: int, db: AsyncSession = Dep
     form = await request.form()
     events, errors, raw_event_rows = _events_from_form(form)
     lines = _lines_from_form(form)
+    team_stats, team_stat_errors = _team_stats_from_form(form, game)
+    errors += team_stat_errors
 
     def _opt_int(name: str) -> int | None:
         value = form.get(name)
@@ -921,6 +974,7 @@ async def protocol_submit(request: Request, game_id: int, db: AsyncSession = Dep
             bullet_win_team_id=_opt_int("bullet_win_team_id"),
             stat_lines=lines,
             events=events,
+            team_stats=team_stats,
         )
         try:
             await game_service.save_protocol(db, game, payload)
@@ -939,6 +993,17 @@ async def protocol_submit(request: Request, game_id: int, db: AsyncSession = Dep
             event_rows=raw_event_rows,
             existing={(line.player_id, line.team_id): line for line in lines},
             derived=game_service._derive_totals(events),
+            team_stats={
+                ts.team_id: {
+                    "shots": str(ts.shots if ts.shots is not None else ""),
+                    "shots_on_goal": str(ts.shots_on_goal if ts.shots_on_goal is not None else ""),
+                    "faceoffs_won": str(ts.faceoffs_won if ts.faceoffs_won is not None else ""),
+                    "conversion_percent": str(
+                        ts.conversion_percent if ts.conversion_percent is not None else ""
+                    ),
+                }
+                for ts in team_stats
+            },
             errors=errors,
         )
         return render(request, "protocol.html", **ctx)
@@ -951,33 +1016,61 @@ async def protocol_submit(request: Request, game_id: int, db: AsyncSession = Dep
 async def homepage_page(request: Request, db: AsyncSession = Depends(get_session)):
     if r := _guard(request):
         return r
-    cfg = await homepage_service.get_settings(db)
+    blocks = await homepage_service.get_blocks(db)
     comps, _ = await competition_service.list_competitions(db, page=1, size=500)
-    return render(request, "homepage.html", cfg=cfg, competitions=comps)
+    # Форма всегда показывает MAX_HOMEPAGE_BLOCKS слотов: заполненные и пустые
+    slots = [
+        {
+            "type": b.type.value,
+            "competition_id": b.competition_id,
+            "title": b.title or "",
+        }
+        for b in blocks
+    ]
+    slots += [{"type": "", "competition_id": None, "title": ""}] * (
+        MAX_HOMEPAGE_BLOCKS - len(slots)
+    )
+    return render(request, "homepage.html", slots=slots, competitions=comps, error=None)
 
 
 @router.post("/homepage")
 async def homepage_submit(
     request: Request,
-    show_bracket: bool = Form(False),
-    bracket_competition_id: str = Form(""),
-    show_standings: bool = Form(False),
-    standings_competition_id: str = Form(""),
     db: AsyncSession = Depends(get_session),
 ):
     if r := _guard(request):
         return r
-    from app.schemas.homepage import HomepageUpdate
+    form = await request.form()
 
-    await homepage_service.update_settings(
-        db,
-        HomepageUpdate(
-            show_bracket=show_bracket,
-            bracket_competition_id=int(bracket_competition_id) if bracket_competition_id else None,
-            show_standings=show_standings,
-            standings_competition_id=int(standings_competition_id) if standings_competition_id else None,
-        ),
-    )
+    blocks: list[HomepageBlockIn] = []
+    for index in range(1, MAX_HOMEPAGE_BLOCKS + 1):
+        block_type = (form.get(f"block-{index}-type") or "").strip()
+        competition_id = (form.get(f"block-{index}-competition_id") or "").strip()
+        if not block_type or not competition_id:
+            continue  # пустой слот — просто пропускаем, дыры в нумерации не страшны
+        blocks.append(
+            HomepageBlockIn(
+                type=HomepageBlockType(block_type),
+                competition_id=int(competition_id),
+                title=(form.get(f"block-{index}-title") or "").strip() or None,
+            )
+        )
+
+    try:
+        await homepage_service.replace_blocks(db, blocks)
+    except ValidationError as exc:
+        await db.rollback()
+        comps, _ = await competition_service.list_competitions(db, page=1, size=500)
+        slots = [
+            {"type": b.type.value, "competition_id": b.competition_id, "title": b.title or ""}
+            for b in blocks
+        ]
+        slots += [{"type": "", "competition_id": None, "title": ""}] * (
+            MAX_HOMEPAGE_BLOCKS - len(slots)
+        )
+        return render(
+            request, "homepage.html", slots=slots, competitions=comps, error=str(exc)
+        )
     return _redirect("/admin/homepage")
 
 

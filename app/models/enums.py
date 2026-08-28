@@ -44,6 +44,13 @@ class GameEventType(StrEnum):
     empty_net = "empty_net"
 
 
+class HomepageBlockType(StrEnum):
+    """Что показывает блок главной: турнирную таблицу или сетку плей-офф."""
+
+    standings = "standings"
+    bracket = "bracket"
+
+
 class MediaKind(StrEnum):
     player_photo = "player_photo"
     team_logo = "team_logo"

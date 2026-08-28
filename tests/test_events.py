@@ -305,3 +305,72 @@ async def test_deleting_game_removes_events(client, auth):
     async with async_session_maker() as db:
         left = await db.scalar(select(func.count()).select_from(GameEvent))
     assert left == 0
+
+
+# --- командные итоги матча ---
+async def test_team_stats_saved_and_penalties_derived(client, auth):
+    env = await _setup(client, auth)
+    r = await _save(
+        client, auth, env,
+        [
+            {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 600,
+             "player_id": env["scorer"]["id"]},
+            {"type": "penalty", "team_id": env["a"]["id"], "time_seconds": 900,
+             "player_id": env["helper"]["id"], "penalty_minutes": 2},
+            {"type": "penalty", "team_id": env["a"]["id"], "time_seconds": 2000,
+             "player_id": env["helper"]["id"], "penalty_minutes": 2},
+        ],
+        score_team_a=1, score_team_b=0,
+        team_stats=[
+            {"team_id": env["a"]["id"], "shots": 41, "shots_on_goal": 34,
+             "faceoffs_won": 9, "conversion_percent": 17},
+            {"team_id": env["b"]["id"], "shots": 37, "shots_on_goal": 17,
+             "faceoffs_won": 16, "conversion_percent": 23},
+        ],
+    )
+    assert r.status_code == 200, r.text
+    stats = {t["team_id"]: t for t in r.json()["team_stats"]}
+    assert stats[env["a"]["id"]]["shots"] == 41
+    assert stats[env["b"]["id"]]["shots_on_goal"] == 17
+    assert stats[env["a"]["id"]]["conversion_percent"] == 17
+    # штрафные минуты отдельным полем не хранятся — считаются из событий
+    assert stats[env["a"]["id"]]["penalty_minutes"] == 4
+    assert stats[env["b"]["id"]]["penalty_minutes"] == 0
+
+
+async def test_team_stats_none_keeps_previous(client, auth):
+    env = await _setup(client, auth)
+    await _save(client, auth, env, [], team_stats=[
+        {"team_id": env["a"]["id"], "shots": 12},
+    ])
+    r = await _save(client, auth, env, [])          # team_stats не передан
+    assert r.status_code == 200, r.text
+    assert [t["shots"] for t in r.json()["team_stats"]] == [12]
+
+    r = await _save(client, auth, env, [], team_stats=[])   # пустой список стирает
+    assert r.json()["team_stats"] == []
+
+
+async def test_team_stats_reject_alien_team_and_duplicates(client, auth):
+    env = await _setup(client, auth)
+    r = await _save(client, auth, env, [], team_stats=[{"team_id": 999, "shots": 1}])
+    assert r.status_code == 400 and "не участвует" in r.json()["detail"]
+
+    r = await _save(client, auth, env, [], team_stats=[
+        {"team_id": env["a"]["id"], "shots": 1},
+        {"team_id": env["a"]["id"], "shots": 2},
+    ])
+    assert r.status_code == 400 and "дважды" in r.json()["detail"]
+
+
+async def test_team_stats_reject_impossible_numbers(client, auth):
+    env = await _setup(client, auth)
+    # в створ не может быть больше, чем всего
+    r = await _save(client, auth, env, [], team_stats=[
+        {"team_id": env["a"]["id"], "shots": 10, "shots_on_goal": 11},
+    ])
+    assert r.status_code == 400 and "створ" in r.json()["detail"]
+
+    for bad in ({"shots": -1}, {"conversion_percent": 101}):
+        r = await _save(client, auth, env, [], team_stats=[{"team_id": env["a"]["id"], **bad}])
+        assert r.status_code == 422, r.text

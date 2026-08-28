@@ -45,6 +45,17 @@ class CompetitionRead(BaseModel):
     winner_team_id: int | None = None
 
 
+class CompetitionBrief(BaseModel):
+    """Короткая карточка соревнования — чтобы фронт не ходил за названием отдельно."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: CompetitionType
+    name: str
+    logo_url: str | None = None
+
+
 class AddTeamRequest(BaseModel):
     team_id: int
 

@@ -446,3 +446,88 @@ async def test_admin_competition_create_with_logo(client):
     comp = (await client.get("/api/v1/competitions")).json()["items"][0]
     assert comp["name"] == "Кубок с гербом"
     assert comp["logo_url"] and comp["logo_url"].endswith(".webp")
+
+
+async def test_admin_homepage_blocks(client, auth):
+    await _login(client)
+    comps = []
+    for name in ("Кубок Спорт", "Кубок Дебют"):
+        comps.append(
+            (await client.post(
+                "/api/v1/competitions",
+                json={"type": "tournament", "name": name, "start_date": str(dt.date(2026, 5, 1))},
+                headers=auth,
+            )).json()
+        )
+
+    r = await client.post(
+        "/admin/homepage",
+        data={
+            "block-1-type": "standings", "block-1-competition_id": str(comps[0]["id"]),
+            "block-1-title": "Таблица Спорта",
+            # второй слот пустой — пропускается, третий занимает его место
+            "block-2-type": "", "block-2-competition_id": "", "block-2-title": "",
+            "block-3-type": "bracket", "block-3-competition_id": str(comps[1]["id"]),
+            "block-3-title": "",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+
+    body = (await client.get("/api/v1/homepage")).json()
+    assert [(b["position"], b["type"], b["competition_id"]) for b in body["blocks"]] == [
+        (1, "standings", comps[0]["id"]),
+        (2, "bracket", comps[1]["id"]),
+    ]
+    assert body["blocks"][0]["title"] == "Таблица Спорта"
+    assert body["blocks"][1]["title"] is None
+
+    page = await client.get("/admin/homepage")
+    assert "Таблица Спорта" in page.text
+
+
+async def test_admin_protocol_team_stats(client, auth):
+    await _login(client)
+    a = (await client.post("/api/v1/teams", json={"name": "Ястребы"}, headers=auth)).json()
+    b = (await client.post("/api/v1/teams", json={"name": "Барсы"}, headers=auth)).json()
+    comp = (await client.post(
+        "/api/v1/competitions",
+        json={"type": "tournament", "name": "Кубок", "start_date": str(dt.date(2026, 5, 1))},
+        headers=auth,
+    )).json()
+    game = (await client.post(
+        "/api/v1/games",
+        json={"competition_id": comp["id"], "team_a_id": a["id"], "team_b_id": b["id"],
+              "date": str(dt.date(2026, 5, 3))},
+        headers=auth,
+    )).json()
+
+    r = await client.post(
+        f"/admin/games/{game['id']}/protocol",
+        data={
+            "score_team_a": "7", "score_team_b": "4",
+            f"ts-{a['id']}-shots": "41", f"ts-{a['id']}-shots_on_goal": "34",
+            f"ts-{a['id']}-faceoffs_won": "9", f"ts-{a['id']}-conversion_percent": "17",
+            f"ts-{b['id']}-shots": "37", f"ts-{b['id']}-shots_on_goal": "17",
+            f"ts-{b['id']}-faceoffs_won": "16", f"ts-{b['id']}-conversion_percent": "23",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+
+    stats = {t["team_id"]: t for t in (await client.get(f"/api/v1/games/{game['id']}")).json()["team_stats"]}
+    assert stats[a["id"]]["shots"] == 41
+    assert stats[b["id"]]["conversion_percent"] == 23
+
+    # значения вернулись в форму
+    page = await client.get(f"/admin/games/{game['id']}/protocol")
+    assert 'value="41"' in page.text and "Итоги матча" in page.text
+
+    # ошибка в цифрах не пишет ничего и не теряет введённое
+    r = await client.post(
+        f"/admin/games/{game['id']}/protocol",
+        data={f"ts-{a['id']}-shots": "10", f"ts-{a['id']}-shots_on_goal": "11"},
+    )
+    assert r.status_code == 200 and "створ" in r.text
+    stats = {t["team_id"]: t for t in (await client.get(f"/api/v1/games/{game['id']}")).json()["team_stats"]}
+    assert stats[a["id"]]["shots"] == 41

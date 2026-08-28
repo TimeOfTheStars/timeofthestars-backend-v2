@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Game, GameEvent, GamePlayerStat
+from app.models import Game, GameEvent, GamePlayerStat, GameTeamStat
 from app.models.enums import GameEventType, GameStatus
 from app.models.game import MAX_EVENT_SECONDS
 from app.schemas.game import GameCreate, GameUpdate, ProtocolRequest
@@ -52,6 +52,7 @@ async def get_with_protocol(db: AsyncSession, game_id: int) -> Game | None:
             selectinload(Game.events).selectinload(GameEvent.player),
             selectinload(Game.events).selectinload(GameEvent.assist1),
             selectinload(Game.events).selectinload(GameEvent.assist2),
+            selectinload(Game.team_stats),
         )
     )
     return res.scalar_one_or_none()
@@ -171,6 +172,35 @@ def _validate_events(
                     )
 
 
+def team_penalty_minutes(events: Iterable[GameEvent]) -> dict[int, int]:
+    """Штрафные минуты по командам — из событий, отдельным полем не хранятся."""
+    totals: dict[int, int] = {}
+    for ev in events:
+        if ev.type is GameEventType.penalty and ev.penalty_minutes:
+            totals[ev.team_id] = totals.get(ev.team_id, 0) + ev.penalty_minutes
+    return totals
+
+
+def _validate_team_stats(rows, *, game: Game) -> None:
+    valid_teams = {game.team_a_id, game.team_b_id}
+    seen: set[int] = set()
+    for row in rows:
+        if row.team_id not in valid_teams:
+            raise ValidationError(f"Команда {row.team_id} не участвует в этом матче")
+        if row.team_id in seen:
+            raise ValidationError(f"Командные итоги для команды {row.team_id} указаны дважды")
+        seen.add(row.team_id)
+        if (
+            row.shots is not None
+            and row.shots_on_goal is not None
+            and row.shots_on_goal > row.shots
+        ):
+            raise ValidationError(
+                f"Команда {row.team_id}: бросков в створ ({row.shots_on_goal}) "
+                f"больше, чем бросков всего ({row.shots})"
+            )
+
+
 async def save_protocol(db: AsyncSession, game: Game, data: ProtocolRequest) -> Game:
     """Полностью заменяет протокол матча: счёт, состав и таймлайн.
 
@@ -241,6 +271,19 @@ async def save_protocol(db: AsyncSession, game: Game, data: ProtocolRequest) -> 
         row.goals = t["goals"] if t else 0
         row.assists = t["assists"] if t else 0
         row.penalties = t["penalties"] if t else 0
+
+    if data.team_stats is not None:
+        _validate_team_stats(data.team_stats, game=game)
+        old_team_stats = (
+            await db.execute(select(GameTeamStat).where(GameTeamStat.game_id == game.id))
+        ).scalars().all()
+        # Как и со строками участия: сначала удалить и сбросить, иначе uq_game_team
+        # не даст вставить новые строки поверх старых.
+        for row in old_team_stats:
+            await db.delete(row)
+        await db.flush()
+        for row in data.team_stats:
+            db.add(GameTeamStat(game_id=game.id, **row.model_dump()))
 
     await db.flush()
     return game

@@ -149,28 +149,51 @@ GET /api/v1/homepage
 ```
 
 ```json
-{ "show_bracket": false, "bracket_competition_id": null,
-  "show_standings": false, "standings_competition_id": null }
+{
+  "blocks": [
+    {"id": 1, "position": 1, "type": "standings", "competition_id": 2,
+     "title": "Таблица Спорта",
+     "competition": {"id": 2, "type": "tournament",
+                     "name": "Летний кубок (Спорт)", "logo_url": null}},
+    {"id": 2, "position": 2, "type": "bracket", "competition_id": 3, "title": null,
+     "competition": {"id": 3, "type": "tournament",
+                     "name": "Летний Кубок (Дебют)", "logo_url": null}}
+  ],
+  "show_standings": true, "standings_competition_id": 2,
+  "show_bracket": true, "bracket_competition_id": 3
+}
 ```
 
-Это переключатели из админки — какие блоки показывать и по какому соревнованию:
+Главная — это **список блоков в порядке показа**, до трёх штук. Каждый блок это либо
+турнирная таблица (`type: "standings"`), либо сетка плей-офф (`type: "bracket"`)
+конкретного соревнования. Рисуйте их сверху вниз в том порядке, в каком они пришли:
+`position` уже отсортирован, сортировать заново не нужно.
+
+Заголовок: `title`, а если он `null` — `competition.name`. За названием ходить не надо,
+карточка соревнования приезжает внутри блока.
 
 ```ts
 const hp = await get<Homepage>("/api/v1/homepage");
 
-if (hp.show_standings && hp.standings_competition_id) {
-  const standings = await get<StandingRow[]>(
-    `/api/v1/competitions/${hp.standings_competition_id}/standings`);
-}
-if (hp.show_bracket && hp.bracket_competition_id) {
-  const games = await get<Game[]>(
-    `/api/v1/competitions/${hp.bracket_competition_id}/games`);
-  const bracket = games.filter(g => g.stage !== "matches");
+for (const block of hp.blocks) {
+  const heading = block.title ?? block.competition?.name ?? "";
+  if (block.type === "standings") {
+    const standings = await get<StandingRow[]>(
+      `/api/v1/competitions/${block.competition_id}/standings`);
+  } else {
+    const games = await get<Game[]>(
+      `/api/v1/competitions/${block.competition_id}/games`);
+    const bracket = games.filter(g => g.stage !== "matches");
+  }
 }
 ```
 
-Проверяйте **и флаг, и id** — флаг может быть `true` при `null` в id (админка это допускает).
-Название соревнования для заголовка блока — отдельным `GET /api/v1/competitions/{id}`.
+Блоков может не быть вовсе (`blocks: []`) — тогда на главной этих секций нет.
+Одно и то же соревнование может встречаться дважды: например таблица и сетка Дебюта.
+
+**Четыре поля внизу — прежний вид настроек**, они остались только для совместимости и
+выводятся из блоков (первый блок каждого типа). Новый код должен читать `blocks`:
+второго и третьего блока в старых полях не видно.
 
 ### Список соревнований
 
@@ -253,7 +276,8 @@ const [player, stats, games] = await Promise.all([
 GET /api/v1/games/{id}
 ```
 
-Один запрос отдаёт матч **вместе с протоколом** (`player_stats`) и **таймлайном** (`events`),
+Один запрос отдаёт матч **вместе с протоколом** (`player_stats`), **таймлайном** (`events`)
+и **командными итогами** (`team_stats`),
 причём в каждой строке и в каждом событии вложен объект `player` — за именами игроков ходить
 не надо. Названия команд придётся подставить из справочника (см. следующий пункт).
 
@@ -428,6 +452,12 @@ const teamById = new Map(items.map(t => [t.id, t]));
       "penalty_minutes": null, "penalty_end_seconds": null, "video_seconds": null,
       "player": { "id": 7, "full_name": "Иван Петров", "…": "" },
       "assist1": null, "assist2": null }
+  ],
+  "team_stats": [
+    { "team_id": 1, "shots": 41, "shots_on_goal": 34, "faceoffs_won": 9,
+      "conversion_percent": 17, "penalty_minutes": 4 },
+    { "team_id": 2, "shots": 37, "shots_on_goal": 17, "faceoffs_won": 16,
+      "conversion_percent": 23, "penalty_minutes": 0 }
   ]
 }
 ```
@@ -452,6 +482,16 @@ const teamById = new Map(items.map(t => [t.id, t]));
 
 `goals`, `assists` и `penalties` в `player_stats` сервер **считает из `events`** —
 вручную их больше не вводят. `penalties` — это минуты штрафа, а не число удалений.
+
+**Командные итоги (`team_stats`)** — цифры для карточки «итоги матча»: броски, броски
+в створ, выигранные вбрасывания, реализация и штрафные минуты. Ноль, один или два
+элемента: строка появляется, только когда цифры ввели, поэтому ищите свою команду по
+`team_id`, а не по индексу, и будьте готовы к пустому массиву.
+
+Все поля кроме `penalty_minutes` могут быть `null` по отдельности — вводят их
+независимо. `penalty_minutes` считается из `events` и есть всегда.
+`conversion_percent` — целое число процентов, посчитанное вручную: не пытайтесь
+свести его с бросками, у разных команд оно бывает посчитано от разной базы.
 
 Гол в серии буллитов (`shootout_goal`) в счёт матча **не входит**: сумма событий типа
 `goal` по команде равна её `score_team_*`. В личную статистику игрока такой гол идёт,
@@ -702,13 +742,40 @@ export interface GameEvent {
   assist2: Player | null;
 }
 
+export interface GameTeamStat {
+  team_id: number;
+  shots: number | null;                // всего бросков
+  shots_on_goal: number | null;        // из них в створ
+  faceoffs_won: number | null;         // выигранные вбрасывания
+  conversion_percent: number | null;   // реализация, целый процент 0..100
+  penalty_minutes: number;             // считается из events, всегда есть
+}
+
 export interface GameWithProtocol extends Game {
   player_stats: PlayerStatLine[];
   events: GameEvent[];
+  team_stats: GameTeamStat[];          // пусто, если цифры не вводили
 }
 
 // ---------- главная ----------
+export type HomepageBlockType = "standings" | "bracket";
+
+export interface CompetitionBrief {
+  id: number; type: CompetitionType; name: string; logo_url: string | null;
+}
+
+export interface HomepageBlock {
+  id: number;
+  position: number;                    // 1..3, уже отсортировано
+  type: HomepageBlockType;
+  competition_id: number;
+  title: string | null;                // null — берите competition.name
+  competition: CompetitionBrief | null;
+}
+
 export interface Homepage {
+  blocks: HomepageBlock[];             // до трёх, в порядке показа
+  // прежние поля: выводятся из blocks, оставлены для совместимости
   show_bracket: boolean;   bracket_competition_id: number | null;
   show_standings: boolean; standings_competition_id: number | null;
 }
@@ -762,31 +829,34 @@ export const mediaUrl = (p: string | null) => (p ? `${API}${p}` : null);
 13. **Поля сетки (`round_no`, `bracket_slot`, `next_game_id`) не гарантированы** — заполняются
     руками в админке и не валидируются. Стройте сетку от `stage`, а эти поля используйте
     как уточнение, если они есть.
-14. **Флаг главной может быть `true` при `null` в id** — проверяйте оба условия.
+14. **Главная — это `blocks`,** до трёх штук, уже в нужном порядке. Старые четыре поля
+    выводятся из них и показывают только первый блок каждого типа.
 15. **`PlayerPosition` — русские строки** (`"вратарь"`, `"защитник"`, `"нападающий"`), не латиница.
 16. **Матчи, составы и статистика — массивы без `items`**; `Page<T>` только у команд,
     игроков и соревнований (`size` максимум 200).
 17. **`slug` есть только у команды** и в API нигде не принимается — все ручки только по `id`.
     Для красивых URL используйте схему `/teams/{slug}-{id}` и запрашивайте по `id`.
 18. **`created_at` / `updated_at` не отдаются** — «обновлено N минут назад» показать нечем.
-19. **`events` — источник истины по голам, передачам и штрафу.** Числа в `player_stats`
+19. **`team_stats` может быть пустым или содержать одну команду** — ищите по `team_id`.
+    `conversion_percent` введён руками и с бросками не сходится по одной формуле.
+20. **`events` — источник истины по голам, передачам и штрафу.** Числа в `player_stats`
     сервер считает из таймлайна; расходиться они не могут. У матчей, внесённых до появления
     таймлайна, `events` пустой, а числа остались от прежнего ручного ввода.
-20. **`penalties` и `penalty_minutes` — это МИНУТЫ**, а не количество удалений. Два
+21. **`penalties` и `penalty_minutes` — это МИНУТЫ**, а не количество удалений. Два
     двухминутных дают `4`.
-21. **`shootout_goal` не входит в счёт матча.** `count(events, type="goal", team_id=X)`
+22. **`shootout_goal` не входит в счёт матча.** `count(events, type="goal", team_id=X)`
     равно `score_team_X`, а буллит учтён отдельно через `bullet_win_team_id`. В личных
     голах игрока буллит есть — поэтому сумма голов игроков может быть больше счёта.
-22. **`events` уже отсортирован сервером** (время → `sort_order` → `id`). Своя сортировка
+23. **`events` уже отсортирован сервером** (время → `sort_order` → `id`). Своя сортировка
     по одному `time_seconds` перемешает события одной секунды.
-23. **`period` — производное поле**, сервер его не хранит и вычисляет из `time_seconds`.
+24. **`period` — производное поле**, сервер его не хранит и вычисляет из `time_seconds`.
     Ровные границы относятся к завершившемуся периоду: 20:00 — конец первого, 60:00 — конец
     третьего. У буллита `period: null`.
-24. **`goalie_change.player_id` — тот, кто вышел** на лёд, а не тот, кого заменили. Кто
+25. **`goalie_change.player_id` — тот, кто вышел** на лёд, а не тот, кого заменили. Кто
     ушёл, выводится из предыдущей смены той же команды.
-19. **Соревнований может быть много страниц** — у `/competitions` нет поиска по названию,
+26. **Соревнований может быть много страниц** — у `/competitions` нет поиска по названию,
     только фильтр `type` и пагинация.
-20. **Всё считается на лету** — кешировать `standings` и статистику на фронте можно смело,
+27. **Всё считается на лету** — кешировать `standings` и статистику на фронте можно смело,
     но помните, что после правки протокола в админке цифры меняются сразу, без инвалидации.
 
 ---

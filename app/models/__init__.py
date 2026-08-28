@@ -8,12 +8,13 @@ from app.models.enums import (
     GameEventType,
     GameStage,
     GameStatus,
+    HomepageBlockType,
     MediaKind,
     PlayerPosition,
     UserRole,
 )
-from app.models.game import Game, GameEvent, GamePlayerStat
-from app.models.homepage import HomepageSettings
+from app.models.game import Game, GameEvent, GamePlayerStat, GameTeamStat
+from app.models.homepage import HomepageBlock
 from app.models.media import MediaFile
 from app.models.player import Player
 from app.models.team import Team
@@ -29,7 +30,8 @@ __all__ = [
     "Game",
     "GamePlayerStat",
     "GameEvent",
-    "HomepageSettings",
+    "GameTeamStat",
+    "HomepageBlock",
     "MediaFile",
     "UserRole",
     "PlayerPosition",
@@ -37,5 +39,6 @@ __all__ = [
     "GameEventType",
     "GameStage",
     "GameStatus",
+    "HomepageBlockType",
     "MediaKind",
 ]

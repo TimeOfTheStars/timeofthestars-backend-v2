@@ -23,6 +23,8 @@
   .hint{padding:0 20px 14px;color:var(--faint);font-size:13px}
   .hint b{color:var(--text)}
   .mismatch{color:#b4232a;font-weight:700}
+  .tstats td, .tstats th{padding:6px 10px}
+  .tstats input[type=number]{width:100%;text-align:center;padding:8px;font-weight:700}
   .savebar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 30px;margin:0 -30px -26px;display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(20,25,60,.05)}
 </style>
 {% endblock %}
@@ -60,6 +62,44 @@
     <div class="hint" style="text-align:center;padding-top:14px">
       По событиям: <b><span id="tl-score">—</span></b> <span id="tl-so"></span>
       <span id="tl-warn" class="mismatch" hidden>— не совпадает со счётом выше</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h" style="padding:0 0 12px">
+      <h2>Итоги матча</h2>
+      <span class="muted">командные цифры для карточки на сайте</span>
+    </div>
+    <table class="tstats" style="width:100%;max-width:640px;margin:0 auto">
+      <thead>
+        <tr>
+          <th style="width:120px">{{ team_a.name if team_a else game.team_a_id }}</th>
+          <th></th>
+          <th style="width:120px">{{ team_b.name if team_b else game.team_b_id }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for field, label in [('shots', 'Броски'), ('shots_on_goal', 'Броски в створ'), ('faceoffs_won', 'Вбрасывания'), ('conversion_percent', 'Реализация, %')] %}
+        <tr>
+          <td><input type="number" min="0" {% if field == 'conversion_percent' %}max="100"{% endif %}
+                     name="ts-{{ game.team_a_id }}-{{ field }}"
+                     value="{{ team_stats.get(game.team_a_id, {}).get(field, '') }}" placeholder="—"></td>
+          <th style="text-align:center;font-weight:600">{{ label }}</th>
+          <td><input type="number" min="0" {% if field == 'conversion_percent' %}max="100"{% endif %}
+                     name="ts-{{ game.team_b_id }}-{{ field }}"
+                     value="{{ team_stats.get(game.team_b_id, {}).get(field, '') }}" placeholder="—"></td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td style="text-align:center"><b><span id="ts-pim-{{ game.team_a_id }}">0</span></b></td>
+          <th style="text-align:center;font-weight:600">Штрафные минуты</th>
+          <td style="text-align:center"><b><span id="ts-pim-{{ game.team_b_id }}">0</span></b></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="hint" style="text-align:center;padding-top:12px">
+      Штрафные минуты не вводятся — они считаются из хронологии.
+      Реализацию впишите так, как она посчитана у вас: сервер её не пересчитывает.
     </div>
   </div>
 
@@ -209,7 +249,7 @@
     tr.querySelectorAll('.only-penalty').forEach(function(td){ td.classList.toggle('hide', kind !== 'penalty'); });
   }
   function recompute(){
-    var totals = {}, scored = {}, so = {};
+    var totals = {}, scored = {}, so = {}, pim = {};
     function slot(pid){ return totals[pid] || (totals[pid] = [0,0,0]); }
     body.querySelectorAll('tr.erow').forEach(function(tr){
       var kind = tr.querySelector('.t-type').value;
@@ -224,6 +264,7 @@
       } else if (kind === 'penalty'){
         var min = Number(tr.querySelector('[name$="-penalty_minutes"]').value || 0);
         slot(pid)[2] += min;
+        pim[team] = (pim[team] || 0) + min;
       }
     });
     document.querySelectorAll('[data-derived]').forEach(function(cell){
@@ -241,6 +282,9 @@
     Object.keys(so).forEach(function(k){ if (k !== TEAM_A) soB = so[k]; });
     document.getElementById('tl-so').textContent = (soA || soB) ? ('(+' + soA + ':' + soB + ' по буллитам)') : '';
     document.getElementById('tl-count').textContent = body.querySelectorAll('tr.erow').length;
+    document.querySelectorAll('[id^=ts-pim-]').forEach(function(el){
+      el.textContent = pim[el.id.replace('ts-pim-', '')] || 0;
+    });
     var typedA = document.querySelector('[name=score_team_a]').value;
     var typedB = document.querySelector('[name=score_team_b]').value;
     var bad = (typedA !== '' && Number(typedA) !== a) || (typedB !== '' && Number(typedB) !== b);

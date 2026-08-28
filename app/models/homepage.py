@@ -1,25 +1,34 @@
-from sqlalchemy import Boolean, ForeignKey, Integer
+from sqlalchemy import Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
+from app.models.enums import HomepageBlockType
+
+# Сколько блоков помещается на главной. Ограничение продуктовое, а не техническое:
+# проверяется в homepage_service, в схеме БД его нет.
+MAX_HOMEPAGE_BLOCKS = 3
 
 
-class HomepageSettings(Base, TimestampMixin):
-    """Синглтон (id=1): что показывать на главном экране фронта."""
+class HomepageBlock(Base, TimestampMixin):
+    """Блок главного экрана: таблица или сетка конкретного соревнования.
 
-    __tablename__ = "homepage_settings"
+    Порядок задаётся полем position (1, 2, 3 …) — его проставляет сервер по
+    порядку присланного списка, клиент им не управляет.
+    """
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    __tablename__ = "homepage_blocks"
 
-    show_bracket: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    bracket_competition_id: Mapped[int | None] = mapped_column(
-        ForeignKey("competitions.id", ondelete="SET NULL"), nullable=True
+    id: Mapped[int] = mapped_column(primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[HomepageBlockType] = mapped_column(
+        Enum(HomepageBlockType, native_enum=False, length=20), nullable=False
     )
-
-    show_standings: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    standings_competition_id: Mapped[int | None] = mapped_column(
-        ForeignKey("competitions.id", ondelete="SET NULL"), nullable=True
+    # Блок без соревнования бессмыслен, поэтому CASCADE: удалили соревнование —
+    # блок уходит вместе с ним, а не превращается в пустой заголовок.
+    competition_id: Mapped[int] = mapped_column(
+        ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Пусто — фронт показывает название соревнования
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    bracket_competition = relationship("Competition", foreign_keys=[bracket_competition_id])
-    standings_competition = relationship("Competition", foreign_keys=[standings_competition_id])
+    competition = relationship("Competition")

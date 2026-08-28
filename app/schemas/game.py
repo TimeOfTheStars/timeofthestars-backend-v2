@@ -142,11 +142,41 @@ class GameEventRead(BaseModel):
     assist2: PlayerRead | None = None
 
 
+class GameTeamStatIn(BaseModel):
+    """Командные итоги матча на вход.
+
+    Штрафных минут здесь нет: они выводятся из событий. Реализация — готовый
+    процент, её на табло считают то от всех бросков, то от бросков в створ.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    team_id: int
+    shots: int | None = Field(default=None, ge=0)
+    shots_on_goal: int | None = Field(default=None, ge=0)
+    faceoffs_won: int | None = Field(default=None, ge=0)
+    conversion_percent: int | None = Field(default=None, ge=0, le=100)
+
+
+class GameTeamStatRead(BaseModel):
+    """Командные итоги на выход. penalty_minutes считается из событий матча."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    team_id: int
+    shots: int | None = None
+    shots_on_goal: int | None = None
+    faceoffs_won: int | None = None
+    conversion_percent: int | None = None
+    penalty_minutes: int = 0
+
+
 class ProtocolRequest(BaseModel):
     """Полный протокол матча: счёт, участники и события (заменяет существующий).
 
     events=None — таймлайн не трогаем (цифры выводятся из уже сохранённых
     событий). events=[] — таймлайн очищается, производные цифры обнуляются.
+    Так же и team_stats: None — не трогаем, [] — стираем командные итоги.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -156,8 +186,10 @@ class ProtocolRequest(BaseModel):
     bullet_win_team_id: int | None = None
     stat_lines: list[PlayerStatLine] = []
     events: list[GameEventIn] | None = None
+    team_stats: list[GameTeamStatIn] | None = None
 
 
 class GameWithProtocol(GameRead):
     player_stats: list[PlayerStatLineRead] = []
     events: list[GameEventRead] = []
+    team_stats: list[GameTeamStatRead] = []

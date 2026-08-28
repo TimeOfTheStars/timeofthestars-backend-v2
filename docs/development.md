@@ -36,12 +36,14 @@ no attribute '__about__'`. Не поднимать, пока passlib не зам
 ## Тесты
 
 ```bash
-pytest              # 47 тестов (12 + 7 + 26 + 2 по файлам ниже)
+pytest              # 60 тестов
 pytest tests/test_events.py -v
 ```
 
 `asyncio_mode = auto`, база — временная SQLite через aiosqlite, схема создаётся
-`Base.metadata.create_all`. Из этого следует важное: **тесты идут в обход Alembic
+`Base.metadata.create_all`. В `conftest.py` включён `PRAGMA foreign_keys=ON` —
+без него SQLite молча игнорирует `ON DELETE CASCADE`, и каскады, работающие
+в бою, в тестах бы не проверялись. Из этого следует важное: **тесты идут в обход Alembic
 и сломанную миграцию не поймают.** Проверять миграции только `alembic upgrade head`
 на PostgreSQL.
 
@@ -51,6 +53,7 @@ pytest tests/test_events.py -v
 | `tests/test_admin.py` | вход в админку, формы, ввод протокола |
 | `tests/test_events.py` | таймлайн: вывод агрегатов, валидация, порядок, периоды, разбор времени |
 | `tests/test_media.py` | загрузка и перекодирование |
+| `tests/test_homepage.py` | блоки главной: порядок, лимит, совместимость со старым видом |
 
 ## Миграции
 
