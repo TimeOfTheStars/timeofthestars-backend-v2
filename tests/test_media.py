@@ -1,5 +1,7 @@
 from io import BytesIO
 
+import pytest
+
 from PIL import Image
 
 
@@ -41,3 +43,33 @@ async def test_upload_requires_auth(client):
     files = {"file": ("x.png", _png_bytes(10, 10), "image/png")}
     r = await client.post("/api/v1/media", files=files, data={"kind": "other"})
     assert r.status_code == 401
+
+
+async def test_size_limit_fits_camera_photo(client, auth):
+    """Снимок с зеркалки (10-15 МБ) не должен отсекаться по размеру.
+
+    Проверяем именно границу: 12 МБ проходят проверку размера и падают уже
+    на разборе картинки, а 26 МБ отклоняются как слишком большие.
+    """
+    import os
+
+    from app.core.config import settings
+    from app.db.session import async_session_maker
+    from app.models.enums import MediaKind
+    from app.services import media_service
+
+    assert settings.MAX_UPLOAD_MB >= 25, "лимит меньше типового кадра с камеры"
+
+    async with async_session_maker() as db:
+        with pytest.raises(media_service.MediaError) as big:
+            await media_service.save_upload(
+                db, content=os.urandom(26 * 1024 * 1024),
+                content_type="image/jpeg", kind=MediaKind.player_photo)
+        assert "больше" in str(big.value)
+
+        with pytest.raises(media_service.MediaError) as camera:
+            await media_service.save_upload(
+                db, content=os.urandom(12 * 1024 * 1024),
+                content_type="image/jpeg", kind=MediaKind.player_photo)
+        # дошло до разбора картинки, а не отсеклось по размеру
+        assert "больше" not in str(camera.value)

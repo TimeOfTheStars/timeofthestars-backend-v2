@@ -28,8 +28,18 @@ def is_admin(request: Request) -> bool:
     return request.session.get("admin_role") == UserRole.admin.value
 
 
+FLASH_KEY = "admin_flash"
+
+
+def flash(request: Request, message: str) -> None:
+    """Сообщение на следующую страницу — переживает redirect после POST."""
+    request.session[FLASH_KEY] = message
+
+
 def render(request: Request, template: str, **ctx):
     """Рендер с общими переменными контекста."""
     ctx.setdefault("user", current_admin(request))
     ctx.setdefault("is_admin", is_admin(request))
+    # flash показывается один раз: забираем и стираем
+    ctx.setdefault("flash", request.session.pop(FLASH_KEY, None))
     return templates.TemplateResponse(request, template, ctx)

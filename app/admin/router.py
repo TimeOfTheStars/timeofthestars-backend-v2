@@ -1,4 +1,5 @@
 import datetime as dt
+import logging
 import re
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
@@ -6,7 +7,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.deps import current_admin, is_admin, render
+from app.admin.deps import current_admin, flash, is_admin, render
 from app.db.session import get_session
 from app.models.enums import (
     CompetitionType,
@@ -43,6 +44,8 @@ from app.services import (
 )
 from app.services.clock import ClockParseError, format_clock, parse_clock, parse_video_time
 from app.services.competition_service import ValidationError
+
+logger = logging.getLogger("tots.admin")
 
 router = APIRouter(prefix="/admin", include_in_schema=False)
 
@@ -170,7 +173,7 @@ async def teams_create(
 ):
     if r := _guard(request):
         return r
-    uploaded = await _maybe_upload_photo(db, logo, MediaKind.team_logo)
+    uploaded = await _maybe_upload_photo(db, logo, MediaKind.team_logo, request)
     await team_service.create(
         db, TeamCreate(name=name, city=city or None, logo_url=uploaded or logo_url or None)
     )
@@ -191,7 +194,7 @@ async def teams_edit(
         return r
     team = await team_service.get(db, team_id)
     if team:
-        uploaded = await _maybe_upload_photo(db, logo, MediaKind.team_logo)
+        uploaded = await _maybe_upload_photo(db, logo, MediaKind.team_logo, request)
         data = TeamUpdate(name=name, city=city or None)
         new_logo = uploaded or (logo_url or None)
         if new_logo:
@@ -246,7 +249,15 @@ async def players_page(
     )
 
 
-async def _maybe_upload_photo(db: AsyncSession, photo: UploadFile | None, kind: MediaKind) -> str | None:
+async def _maybe_upload_photo(
+    db: AsyncSession,
+    photo: UploadFile | None,
+    kind: MediaKind,
+    request: Request | None = None,
+) -> str | None:
+    """Загружает файл, если он выбран. Отказ не теряется: причина уходит
+    в flash и показывается на следующей странице, иначе форма молча
+    сохранялась бы без картинки."""
     if photo is None or not photo.filename:
         return None
     content = await photo.read()
@@ -254,7 +265,13 @@ async def _maybe_upload_photo(db: AsyncSession, photo: UploadFile | None, kind: 
         rec = await media_service.save_upload(
             db, content=content, content_type=photo.content_type, kind=kind
         )
-    except media_service.MediaError:
+    except media_service.MediaError as exc:
+        logger.warning(
+            "Файл «%s» (%s, %.1f МБ) не принят: %s",
+            photo.filename, photo.content_type, len(content) / 1024 / 1024, exc,
+        )
+        if request is not None:
+            flash(request, f"Файл «{photo.filename}» не загружен: {exc}")
         return None
     return media_service.file_url(rec.filename)
 
@@ -288,7 +305,7 @@ async def players_create(
 ):
     if r := _guard(request):
         return r
-    photo_url = await _maybe_upload_photo(db, photo, MediaKind.player_photo)
+    photo_url = await _maybe_upload_photo(db, photo, MediaKind.player_photo, request)
     await player_service.create(
         db,
         PlayerCreate(
@@ -317,7 +334,7 @@ async def players_edit(
         return r
     player = await player_service.get(db, player_id)
     if player:
-        photo_url = await _maybe_upload_photo(db, photo, MediaKind.player_photo)
+        photo_url = await _maybe_upload_photo(db, photo, MediaKind.player_photo, request)
         data = PlayerUpdate(
             full_name=full_name,
             birth_date=dt.date.fromisoformat(birth_date) if birth_date else None,
@@ -372,7 +389,7 @@ async def competitions_create(
 ):
     if r := _guard(request):
         return r
-    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo)
+    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo, request)
     comp = await competition_service.create(
         db,
         CompetitionCreate(
@@ -458,7 +475,7 @@ async def competition_edit(
     if comp is None:
         return _redirect("/admin/competitions")
 
-    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo)
+    uploaded = await _maybe_upload_photo(db, logo, MediaKind.competition_logo, request)
     # update() применяет только явно переданные поля (exclude_unset), поэтому
     # собираем набор целиком, а не доопределяем атрибуты после конструктора
     fields: dict = {
@@ -665,7 +682,7 @@ async def game_edit(
     game = await game_service.get(db, game_id)
     if game is None:
         return _redirect("/admin/competitions")
-    uploaded_scan = await _maybe_upload_photo(db, scan, MediaKind.game_scan)
+    uploaded_scan = await _maybe_upload_photo(db, scan, MediaKind.game_scan, request)
     data = GameUpdate(
         team_a_id=team_a_id,
         team_b_id=team_b_id,

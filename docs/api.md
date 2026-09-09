@@ -165,7 +165,8 @@ POST /api/v1/auth/login     форма username + password  →  {access_token, 
 | `GET` `PUT` | `/homepage` | блоки главной |
 
 Принимаются `image/jpeg`, `png`, `webp`, `gif` и `application/pdf`, лимит
-`MAX_UPLOAD_MB` (10). Картинки перекодируются в WebP и уменьшаются по типу.
+`MAX_UPLOAD_MB` (25). Картинки перекодируются в WebP и уменьшаются по типу,
+так что снимок с камеры на 12 МБ превращается в файл около сотни килобайт.
 
 ### Главная
 

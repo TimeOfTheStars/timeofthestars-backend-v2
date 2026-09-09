@@ -26,7 +26,9 @@ class Settings(BaseSettings):
 
     # --- Файлы ---
     MEDIA_DIR: str = "media"
-    MAX_UPLOAD_MB: int = 10
+    # 25 МБ: снимок с зеркалки — это 10-15 МБ, прежние 10 их отсекали.
+    # Менять вместе с request_body max_size в Caddy (там должен быть запас).
+    MAX_UPLOAD_MB: int = 25
 
     @field_validator("CORS_ORIGINS")
     @classmethod

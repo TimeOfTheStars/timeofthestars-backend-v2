@@ -531,3 +531,27 @@ async def test_admin_protocol_team_stats(client, auth):
     assert r.status_code == 200 and "створ" in r.text
     stats = {t["team_id"]: t for t in (await client.get(f"/api/v1/games/{game['id']}")).json()["team_stats"]}
     assert stats[a["id"]]["shots"] == 41
+
+
+async def test_rejected_upload_shows_message(client, auth):
+    """Отказ загрузки не должен теряться: раньше форма молча сохранялась без фото."""
+    await _login(client)
+    player = (await client.post(
+        "/api/v1/players", json={"full_name": "Бондарь Дмитрий"}, headers=auth
+    )).json()
+
+    # тип не из списка разрешённых — например HEIC с телефона
+    r = await client.post(
+        f"/admin/players/{player['id']}/edit",
+        data={"full_name": "Бондарь Дмитрий", "birth_date": "", "position": "", "grip": ""},
+        files={"photo": ("photo.heic", b"\x00\x00\x00\x18ftypheic", "image/heic")},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+    # сообщение приезжает на следующую страницу и показывается один раз
+    page = await client.get("/admin/players")
+    assert "не загружен" in page.text and "photo.heic" in page.text
+    assert "не загружен" not in (await client.get("/admin/players")).text
+
+    fresh = (await client.get(f"/api/v1/players/{player['id']}")).json()
+    assert fresh["photo_url"] is None

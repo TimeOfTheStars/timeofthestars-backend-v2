@@ -99,7 +99,7 @@ gunzip -c /srv/tots/backups/tots-YYYY-MM-DD.sql.gz \
   `CORS_ORIGINS=*` или с дефолтным паролем базы — проверки в `app/core/config.py`.
 - Cookie сессии админки помечена `Secure`, HSTS выставляет Caddy.
 - `--no-server-header` у uvicorn, версия сервера в ответах не светится.
-- `request_body max_size 12MB` в Caddy — выше `MAX_UPLOAD_MB` (10), чтобы клиент
+- `request_body max_size 30MB` в Caddy — выше `MAX_UPLOAD_MB` (25), чтобы клиент
   получал внятную ошибку приложения, а не обрыв на прокси.
 - Пароль root, выданный при создании сервера, надо считать скомпрометированным
   (он проходил через переписку) и сменить.
