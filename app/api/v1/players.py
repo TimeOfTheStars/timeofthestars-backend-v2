@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, require_staff
 from app.schemas.common import Page
-from app.schemas.game import GameRead
+from app.schemas.game import GameRead, PlayerGoalMoment
 from app.schemas.player import PlayerCreate, PlayerRead, PlayerUpdate
 from app.schemas.stats import PlayerStatsBreakdown
 from app.services import game_service, player_service, stats_service
@@ -48,6 +48,19 @@ async def player_stats(
 @router.get("/{player_id}/games", response_model=list[GameRead])
 async def player_games(player_id: int, db: AsyncSession = Depends(get_session)):
     return await game_service.games_for_player(db, player_id)
+
+
+@router.get("/{player_id}/goal-moments", response_model=list[PlayerGoalMoment])
+async def player_goal_moments(player_id: int, db: AsyncSession = Depends(get_session)):
+    """Голы игрока со ссылкой на момент в видео матча.
+
+    Только собственные голы и только те, у которых проставлен таймкод, поэтому
+    у большинства игроков список пока пуст — это не ошибка, а отсутствие данных.
+    """
+    player = await player_service.get(db, player_id)
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Игрок не найден")
+    return await game_service.goal_moments_for_player(db, player_id)
 
 
 @router.post("", response_model=PlayerRead, status_code=status.HTTP_201_CREATED)

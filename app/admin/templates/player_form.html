@@ -29,4 +29,34 @@
     </div>
   </form>
 </div>
+
+{% if moments %}
+<div class="card tight" style="max-width:620px;margin-top:18px">
+  <div class="card-h" style="padding:16px 20px 0">
+    <h2>Моменты из видео</h2>
+    <span class="muted">{{ moments|length }}</span>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Дата</th><th>Соперник</th><th>Время</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for m in moments %}
+      <tr>
+        <td>{{ m.date.strftime('%d.%m.%Y') }}</td>
+        <td>{{ m.opponent.name }}{% if m.type.value == 'shootout_goal' %} <span class="pill">буллит</span>{% endif %}</td>
+        {# позицию в видео фильтром clock не выводим: он без часовой формы #}
+        <td>{{ m.time_seconds | clock }}</td>
+        <td style="text-align:right">
+          <a class="btn secondary sm" href="{{ m.video_at_url }}" target="_blank" rel="noopener">▶ смотреть</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="hint" style="padding-top:12px">
+    Показаны голы этого игрока, у которых в хронологии матча проставлен момент видео.
+  </div>
+</div>
+{% endif %}
 {% endblock %}

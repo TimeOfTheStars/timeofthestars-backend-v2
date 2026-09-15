@@ -511,6 +511,40 @@ export function videoAt(videoUrl: string | null, seconds: number | null): string
 
 Видео одно на матч; если `video_url === null`, кнопку «смотреть» не показываем.
 
+Это нужно для таймлайна матча. **Для карточки игрока собирать ссылку не надо** — там есть
+готовый `video_at_url`, см. следующий раздел.
+
+### Моменты голов игрока
+
+```
+GET /api/v1/players/{id}/goal-moments
+```
+
+```json
+[
+  {"event_id": 12, "game_id": 1, "type": "goal", "period": 1, "time_seconds": 960,
+   "video_seconds": 2705, "video_url": "https://vkvideo.ru/live-227828023_456239234",
+   "video_at_url": "https://vkvideo.ru/live-227828023_456239234?t=45m5s",
+   "date": "2026-08-18", "competition_id": 2, "competition_name": "Летний кубок (Спорт)",
+   "team": { "id": 4, "name": "Ярославич", "…": "" },
+   "opponent": { "id": 2, "name": "Зубр", "…": "" },
+   "score_for": 4, "score_against": 4, "assist1": null, "assist2": null}
+]
+```
+
+Готовый список для блока «моменты» в профиле игрока — один запрос вместо обхода всех его
+матчей. Что важно:
+
+- **только собственные голы**: за голевую передачу момент не появляется, хотя `assist1`
+  и `assist2` в записи есть — чтобы подписать «с передачи такого-то»;
+- **только голы с таймкодом** и только если у матча заполнено `video_url`. У большинства
+  игроков список пока пуст — таймкоды проставлены не везде, это не ошибка;
+- `score_for` / `score_against` — счёт со стороны команды игрока, разбираться, хозяин он
+  или гость, не нужно;
+- порядок готовый: свежие матчи сверху, внутри матча — по игровому времени;
+- буллит тоже попадает, у него `type: "shootout_goal"` и `period: null`;
+- `404` только если игрока нет; у игрока без моментов — `200` и пустой массив.
+
 ### Сетка плей-офф
 
 Отдельной ручки нет — строится из `GET /competitions/{id}/games`:
@@ -749,6 +783,26 @@ export interface GameTeamStat {
   faceoffs_won: number | null;         // выигранные вбрасывания
   conversion_percent: number | null;   // реализация, целый процент 0..100
   penalty_minutes: number;             // считается из events, всегда есть
+}
+
+export interface PlayerGoalMoment {
+  event_id: number;
+  game_id: number;
+  type: "goal" | "shootout_goal";
+  period: number | null;          // null у буллита
+  time_seconds: number;           // игровое время гола
+  video_seconds: number;
+  video_url: string;
+  video_at_url: string;           // готовая ссылка на момент, videoAt() не нужен
+  date: string;
+  competition_id: number;
+  competition_name: string;
+  team: Team;                     // за кого забил
+  opponent: Team;
+  score_for: number | null;       // счёт со стороны команды игрока
+  score_against: number | null;
+  assist1: Player | null;
+  assist2: Player | null;
 }
 
 export interface GameWithProtocol extends Game {

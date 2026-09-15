@@ -555,3 +555,44 @@ async def test_rejected_upload_shows_message(client, auth):
 
     fresh = (await client.get(f"/api/v1/players/{player['id']}")).json()
     assert fresh["photo_url"] is None
+
+
+async def test_admin_player_form_shows_video_moments(client, auth):
+    """На странице правки игрока видны его голы с моментами видео."""
+    await _login(client)
+    a = (await client.post("/api/v1/teams", json={"name": "Кометы"}, headers=auth)).json()
+    b = (await client.post("/api/v1/teams", json={"name": "Метеоры"}, headers=auth)).json()
+    scorer = (await client.post("/api/v1/players", json={"full_name": "Бомбардир Меткий"},
+                                headers=auth)).json()
+    quiet = (await client.post("/api/v1/players", json={"full_name": "Тихий Защитник"},
+                               headers=auth)).json()
+    comp = (await client.post("/api/v1/competitions", json={
+        "type": "tournament", "name": "Кубок", "start_date": str(dt.date(2026, 5, 1))
+    }, headers=auth)).json()
+    game = (await client.post("/api/v1/games", json={
+        "competition_id": comp["id"], "team_a_id": a["id"], "team_b_id": b["id"],
+        "date": str(dt.date(2026, 5, 3)),
+        "video_url": "https://vkvideo.ru/live-227828023_456239234",
+    }, headers=auth)).json()
+    r = await client.put(f"/api/v1/games/{game['id']}/protocol", json={
+        "score_team_a": 1, "score_team_b": 0,
+        "stat_lines": [{"player_id": scorer["id"], "team_id": a["id"]},
+                       {"player_id": quiet["id"], "team_id": a["id"]}],
+        "events": [{"type": "goal", "team_id": a["id"], "time_seconds": 960,
+                    "player_id": scorer["id"], "video_seconds": 2705}],
+    }, headers=auth)
+    assert r.status_code == 200, r.text
+
+    page = await client.get(f"/admin/players/{scorer['id']}/edit")
+    assert page.status_code == 200
+    assert "Моменты из видео" in page.text
+    assert "?t=45m5s" in page.text
+    assert "16:00" in page.text          # игровое время гола
+    assert "Метеоры" in page.text        # соперник
+
+    # у игрока без голов блока нет вовсе
+    empty = await client.get(f"/admin/players/{quiet['id']}/edit")
+    assert empty.status_code == 200 and "Моменты из видео" not in empty.text
+
+    # форма создания игрока по-прежнему открывается
+    assert (await client.get("/admin/players/new")).status_code == 200

@@ -7,7 +7,8 @@ from sqlalchemy.orm import selectinload
 from app.models import Game, GameEvent, GamePlayerStat, GameTeamStat
 from app.models.enums import GameEventType, GameStatus
 from app.models.game import MAX_EVENT_SECONDS
-from app.schemas.game import GameCreate, GameUpdate, ProtocolRequest
+from app.schemas.game import GameCreate, GameUpdate, PlayerGoalMoment, ProtocolRequest
+from app.services.clock import video_url_at
 from app.services.competition_service import ValidationError
 
 
@@ -84,6 +85,75 @@ GOAL_TYPES = frozenset({GameEventType.goal, GameEventType.shootout_goal})
 # У обоих событий player_id — вратарь: в goalie_change тот, кто вышел,
 # в empty_net тот, кто ушёл с площадки.
 GOALIE_TYPES = frozenset({GameEventType.goalie_change, GameEventType.empty_net})
+
+
+def _goal_moment(ev: GameEvent) -> PlayerGoalMoment:
+    """Событие + матч -> запись для карточки игрока, со стороны его команды."""
+    game = ev.game
+    home = ev.team_id == game.team_a_id
+    opponent = game.team_b if home else game.team_a
+    return PlayerGoalMoment(
+        event_id=ev.id,
+        game_id=game.id,
+        type=ev.type,
+        period=ev.period,
+        time_seconds=ev.time_seconds,
+        video_seconds=ev.video_seconds,
+        video_url=game.video_url,
+        video_at_url=video_url_at(game.video_url, ev.video_seconds),
+        date=game.date,
+        competition_id=game.competition_id,
+        competition_name=game.competition.name,
+        team=ev.team,
+        opponent=opponent,
+        score_for=game.score_team_a if home else game.score_team_b,
+        score_against=game.score_team_b if home else game.score_team_a,
+        assist1=ev.assist1,
+        assist2=ev.assist2,
+    )
+
+
+async def goal_moments_for_player(db: AsyncSession, player_id: int) -> list[PlayerGoalMoment]:
+    """Голы игрока, у которых есть и таймкод, и видео матча. Свежие матчи сверху.
+
+    Идём от событий к матчу, а не через строки состава (как games_for_player):
+    если игрока потом убрали из протокола, гол в game_events остаётся, и джойн
+    через состав молча спрятал бы момент.
+    """
+    res = await db.execute(
+        select(GameEvent)
+        .join(Game, Game.id == GameEvent.game_id)
+        .where(
+            GameEvent.player_id == player_id,
+            GameEvent.type.in_(GOAL_TYPES),
+            GameEvent.video_seconds.isnot(None),
+            Game.video_url.isnot(None),
+            # через API в video_url можно записать пустую строку — тогда
+            # ссылка на момент получилась бы без домена
+            Game.video_url != "",
+        )
+        # Games.time не годится для сортировки: поле nullable, а SQLite и
+        # PostgreSQL кладут NULL в DESC по-разному. Порядок внутри матча
+        # повторяет связь Game.events — на select(GameEvent) он не применяется.
+        .order_by(
+            Game.date.desc(),
+            Game.id.desc(),
+            GameEvent.time_seconds,
+            GameEvent.sort_order,
+            GameEvent.id,
+        )
+        .options(
+            # без этого ev.game.competition.name уронит запрос с MissingGreenlet
+            selectinload(GameEvent.game).selectinload(Game.competition),
+            selectinload(GameEvent.game).selectinload(Game.team_a),
+            selectinload(GameEvent.game).selectinload(Game.team_b),
+            selectinload(GameEvent.team),
+            selectinload(GameEvent.assist1),
+            selectinload(GameEvent.assist2),
+        )
+    )
+    return [_goal_moment(ev) for ev in res.scalars().all()]
+
 
 
 def _derive_totals(events: Iterable) -> dict[int, dict[str, int]]:

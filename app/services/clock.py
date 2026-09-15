@@ -71,3 +71,28 @@ def parse_video_time(raw: str | None) -> int | None:
         if found:
             raw = found.group(1)
     return parse_clock(raw)
+
+
+def format_video_time(seconds: int) -> str:
+    """Секунды -> формат параметра ?t= у VK Видео: 2705 -> '45m5s'.
+
+    Часы и минуты опускаются, когда они нулевые, а секунды пишутся всегда —
+    ровно как в videoAt() фронтового контракта, чтобы ссылки совпадали.
+    Часовая форма обязательна: 68m15s VK разбирает ненадёжно, 1h8m15s — штатно.
+    """
+    total = max(0, int(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}h" * bool(hours) + f"{minutes}m" * bool(minutes) + f"{secs}s"
+
+
+def video_url_at(video_url: str | None, seconds: int | None) -> str | None:
+    """Ссылка на момент: '…/live' + 2705 -> '…/live?t=45m5s'.
+
+    Обратная к parse_video_time: формат ?t= знает только этот модуль.
+    Нет ссылки или нет таймкода — нет и момента.
+    """
+    if not video_url or seconds is None:
+        return None
+    sep = "&" if "?" in video_url else "?"
+    return f"{video_url}{sep}t={format_video_time(seconds)}"

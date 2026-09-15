@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import GameEventType, GameStage, GameStatus
 from app.models.game import MAX_EVENT_SECONDS
 from app.schemas.player import PlayerRead
+from app.schemas.team import TeamRead
 
 
 class GameCreate(BaseModel):
@@ -193,3 +194,33 @@ class GameWithProtocol(GameRead):
     player_stats: list[PlayerStatLineRead] = []
     events: list[GameEventRead] = []
     team_stats: list[GameTeamStatRead] = []
+
+
+class PlayerGoalMoment(BaseModel):
+    """Гол игрока с таймкодом в видео матча — для карточки игрока.
+
+    Попадают только голы самого игрока (передачи отдельными записями не идут)
+    и только те, у которых есть и video_seconds, и video_url у матча — иначе
+    показывать было бы нечего. Поэтому три видео-поля здесь не Optional.
+    """
+
+    event_id: int
+    game_id: int
+    type: GameEventType                 # goal | shootout_goal — буллит тоже гол
+    period: int | None = None           # None у буллита
+    time_seconds: int                   # игровое время гола, как в протоколе
+    video_seconds: int
+    video_url: str
+    video_at_url: str                   # готовая ссылка на момент: …?t=45m5s
+
+    date: dt.date
+    competition_id: int
+    competition_name: str
+    # Счёт и соперник — с точки зрения команды игрока, чтобы карточка не
+    # соображала сама, с какой он стороны.
+    team: TeamRead
+    opponent: TeamRead
+    score_for: int | None = None
+    score_against: int | None = None
+    assist1: PlayerRead | None = None
+    assist2: PlayerRead | None = None

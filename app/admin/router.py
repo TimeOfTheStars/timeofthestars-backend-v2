@@ -290,7 +290,13 @@ async def players_edit_page(request: Request, player_id: int, db: AsyncSession =
     player = await player_service.get(db, player_id)
     if player is None:
         return _redirect("/admin/players")
-    return render(request, "player_form.html", player=player, positions=list(PlayerPosition))
+    return render(
+        request,
+        "player_form.html",
+        player=player,
+        positions=list(PlayerPosition),
+        moments=await game_service.goal_moments_for_player(db, player_id),
+    )
 
 
 @router.post("/players")

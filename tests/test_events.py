@@ -374,3 +374,176 @@ async def test_team_stats_reject_impossible_numbers(client, auth):
     for bad in ({"shots": -1}, {"conversion_percent": 101}):
         r = await _save(client, auth, env, [], team_stats=[{"team_id": env["a"]["id"], **bad}])
         assert r.status_code == 422, r.text
+
+
+# --- моменты голов в карточке игрока ---
+VIDEO = "https://vkvideo.ru/live-227828023_456239234"
+
+
+async def _with_video(client, auth, env, url=VIDEO):
+    r = await client.put(f"/api/v1/games/{env['game']['id']}", json={"video_url": url},
+                         headers=auth)
+    assert r.status_code == 200, r.text
+
+
+async def _moments(client, player_id):
+    r = await client.get(f"/api/v1/players/{player_id}/goal-moments")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def test_goal_moments_only_goals_with_timecode(client, auth):
+    env = await _setup(client, auth)
+    await _with_video(client, auth, env)
+    await _save(
+        client, auth, env,
+        [
+            {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 960,
+             "player_id": env["scorer"]["id"], "video_seconds": 2705},
+            # второй гол того же игрока без таймкода — в моменты не попадёт
+            {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 1800,
+             "player_id": env["scorer"]["id"]},
+            {"type": "penalty", "team_id": env["a"]["id"], "time_seconds": 900,
+             "player_id": env["helper"]["id"], "penalty_minutes": 2},
+        ],
+        score_team_a=2, score_team_b=0,
+    )
+    moments = await _moments(client, env["scorer"]["id"])
+    assert len(moments) == 1
+    m = moments[0]
+    assert m["time_seconds"] == 960 and m["video_seconds"] == 2705
+    assert m["video_at_url"] == f"{VIDEO}?t=45m5s"
+    assert m["video_url"] == VIDEO
+
+
+async def test_goal_moments_skip_game_without_video(client, auth):
+    env = await _setup(client, auth)
+    await _save(client, auth, env, [
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 960,
+         "player_id": env["scorer"]["id"], "video_seconds": 2705},
+    ], score_team_a=1, score_team_b=0)
+    # видео у матча нет — момент показывать нечем
+    assert await _moments(client, env["scorer"]["id"]) == []
+
+    # пустая строка тоже не ссылка
+    await _with_video(client, auth, env, url="")
+    assert await _moments(client, env["scorer"]["id"]) == []
+
+    await _with_video(client, auth, env)
+    assert len(await _moments(client, env["scorer"]["id"])) == 1
+
+
+async def test_goal_moments_include_shootout_and_skip_assists(client, auth):
+    env = await _setup(client, auth)
+    await _with_video(client, auth, env)
+    await _save(client, auth, env, [
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 600,
+         "player_id": env["scorer"]["id"], "assist1_player_id": env["helper"]["id"],
+         "video_seconds": 120},
+        {"type": "shootout_goal", "team_id": env["a"]["id"], "time_seconds": 3600,
+         "player_id": env["scorer"]["id"], "video_seconds": 4095},
+    ], score_team_a=1, score_team_b=0)
+
+    moments = await _moments(client, env["scorer"]["id"])
+    assert [m["type"] for m in moments] == ["goal", "shootout_goal"]
+    assert moments[0]["assist1"]["id"] == env["helper"]["id"]
+    assert moments[1]["period"] is None                  # у буллита периода нет
+    assert moments[1]["video_at_url"] == f"{VIDEO}?t=1h8m15s"
+    # ассистенту момент не засчитывается — только собственные голы
+    assert await _moments(client, env["helper"]["id"]) == []
+
+
+async def test_goal_moments_context_from_player_side(client, auth):
+    env = await _setup(client, auth)
+    await _with_video(client, auth, env)
+    await _save(client, auth, env, [
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 600,
+         "player_id": env["scorer"]["id"], "video_seconds": 120},
+        {"type": "goal", "team_id": env["b"]["id"], "time_seconds": 1200,
+         "player_id": env["rival"]["id"], "video_seconds": 300},
+    ], score_team_a=1, score_team_b=1)
+
+    home = (await _moments(client, env["scorer"]["id"]))[0]
+    away = (await _moments(client, env["rival"]["id"]))[0]
+    # счёт и соперник — всегда со стороны команды игрока
+    assert home["team"]["id"] == env["a"]["id"] and home["opponent"]["id"] == env["b"]["id"]
+    assert away["team"]["id"] == env["b"]["id"] and away["opponent"]["id"] == env["a"]["id"]
+    assert (home["score_for"], home["score_against"]) == (1, 1)
+    assert (away["score_for"], away["score_against"]) == (1, 1)
+    assert home["competition_name"] == env["comp"]["name"]
+    assert home["date"] == env["game"]["date"]
+
+
+async def test_goal_moments_newest_game_first(client, auth):
+    env = await _setup(client, auth)
+    await _with_video(client, auth, env)
+    await _save(client, auth, env, [
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 1800,
+         "player_id": env["scorer"]["id"], "video_seconds": 300},
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 600,
+         "player_id": env["scorer"]["id"], "video_seconds": 120},
+    ], score_team_a=2, score_team_b=0)
+
+    later = (await client.post("/api/v1/games", json={
+        "competition_id": env["comp"]["id"], "team_a_id": env["a"]["id"],
+        "team_b_id": env["b"]["id"], "date": str(dt.date(2026, 4, 1)),
+        "video_url": VIDEO,
+    }, headers=auth)).json()
+    r = await client.put(
+        f"/api/v1/games/{later['id']}/protocol",
+        json={"stat_lines": [{"player_id": env["scorer"]["id"], "team_id": env["a"]["id"]}],
+              "events": [{"type": "goal", "team_id": env["a"]["id"], "time_seconds": 60,
+                          "player_id": env["scorer"]["id"], "video_seconds": 30}],
+              "score_team_a": 1, "score_team_b": 0},
+        headers=auth,
+    )
+    assert r.status_code == 200, r.text
+
+    moments = await _moments(client, env["scorer"]["id"])
+    # свежий матч сверху, внутри матча — по игровому времени
+    assert [m["game_id"] for m in moments] == [later["id"], env["game"]["id"], env["game"]["id"]]
+    assert [m["time_seconds"] for m in moments] == [60, 600, 1800]
+
+
+async def test_goal_moments_survive_deleted_assistant(client, auth):
+    env = await _setup(client, auth)
+    await _with_video(client, auth, env)
+    await _save(client, auth, env, [
+        {"type": "goal", "team_id": env["a"]["id"], "time_seconds": 600,
+         "player_id": env["scorer"]["id"], "assist1_player_id": env["helper"]["id"],
+         "video_seconds": 120},
+    ], score_team_a=1, score_team_b=0)
+
+    assert (await client.delete(f"/api/v1/players/{env['helper']['id']}",
+                                headers=auth)).status_code == 204
+    moments = await _moments(client, env["scorer"]["id"])
+    # ассистент уходит по SET NULL, сам гол остаётся
+    assert len(moments) == 1 and moments[0]["assist1"] is None
+
+
+async def test_goal_moments_empty_and_unknown_player(client, auth):
+    env = await _setup(client, auth)
+    assert await _moments(client, env["keeper"]["id"]) == []      # голов нет — пустой список
+    r = await client.get("/api/v1/players/424242/goal-moments")
+    assert r.status_code == 404
+
+
+@pytest.mark.parametrize("seconds,tail", [
+    (0, "0s"), (45, "45s"), (65, "1m5s"), (2705, "45m5s"),
+    (3665, "1h1m5s"), (4095, "1h8m15s"),
+])
+def test_video_url_at_matches_frontend_format(seconds, tail):
+    from app.services.clock import parse_video_time, video_url_at
+
+    link = video_url_at(VIDEO, seconds)
+    assert link == f"{VIDEO}?t={tail}"
+    # обратный разбор живёт в том же модуле — значение не искажается
+    assert parse_video_time(link) == seconds
+
+
+def test_video_url_at_keeps_existing_query_and_handles_gaps():
+    from app.services.clock import video_url_at
+
+    assert video_url_at("https://vk.ru/video?z=1", 2705) == "https://vk.ru/video?z=1&t=45m5s"
+    assert video_url_at(None, 10) is None
+    assert video_url_at(VIDEO, None) is None
