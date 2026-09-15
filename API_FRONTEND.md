@@ -545,6 +545,8 @@ GET /api/v1/players/{id}/goal-moments
 - буллит тоже попадает, у него `type: "shootout_goal"` и `period: null`;
 - `404` только если игрока нет; у игрока без моментов — `200` и пустой массив.
 
+Подробный разбор с примерами, типами и подводными камнями — в отдельном файле [API_FRONTEND_GOAL_MOMENTS.md](API_FRONTEND_GOAL_MOMENTS.md).
+
 ### Сетка плей-офф
 
 Отдельной ручки нет — строится из `GET /competitions/{id}/games`:
