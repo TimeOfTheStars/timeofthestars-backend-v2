@@ -189,7 +189,7 @@
     <div class="field" style="margin:0"><label>Команда B</label><select name="team_b_id">{% for ct in roster %}<option value="{{ ct.team_id }}">{{ ct.team.name }}</option>{% endfor %}</select></div>
     <div class="field" style="margin:0"><label>Дата</label><input type="date" name="date" required></div>
     <div class="field" style="margin:0"><label>Время</label><input type="time" name="time"></div>
-    <div class="field" style="margin:0"><label>Стадия</label><select name="stage">{% for s in stages %}<option value="{{ s.value }}">{{ s.value }}</option>{% endfor %}</select></div>
+    <div class="field" style="margin:0"><label>Стадия</label><select name="stage">{% for s in stages %}<option value="{{ s.value }}">{{ s.label }}</option>{% endfor %}</select></div>
     <button class="btn" type="submit">Создать матч</button>
   </form>
   {% else %}<p class="muted" style="margin:0">Добавьте минимум две команды, чтобы создавать матчи.</p>{% endif %}
@@ -208,7 +208,7 @@
         {% if g.scan %}<a href="{{ g.scan }}" target="_blank" title="Скан протокола">📄</a>{% endif %}
       </td>
       <td class="num">{% if g.score_team_a is not none %}<b>{{ g.score_team_a }} : {{ g.score_team_b }}</b>{% else %}<span class="faint">—</span>{% endif %}</td>
-      <td><span class="pill {{ 'ok' if g.status.value == 'finished' else '' }}">{{ g.stage }}</span></td>
+      <td><span class="pill {{ 'ok' if g.status.value == 'finished' else '' }}">{{ g.stage.label }}</span></td>
       <td><div class="row-actions">
         <a class="btn sm secondary" href="/admin/games/{{ g.id }}/edit">Изменить</a>
         <a class="btn sm" href="/admin/games/{{ g.id }}/protocol">Протокол</a>

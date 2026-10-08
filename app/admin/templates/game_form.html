@@ -21,7 +21,7 @@
       <div class="field"><label>Время</label><input type="time" name="time" value="{{ game.time.strftime('%H:%M') if game.time else '' }}"></div>
       <div class="field"><label>Стадия</label>
         <select name="stage">
-          {% for s in stages %}<option value="{{ s.value }}" {{ 'selected' if game.stage.value == s.value else '' }}>{{ s.value }}</option>{% endfor %}
+          {% for s in stages %}<option value="{{ s.value }}" {{ 'selected' if game.stage.value == s.value else '' }}>{{ s.label }}</option>{% endfor %}
         </select>
       </div>
     </div>

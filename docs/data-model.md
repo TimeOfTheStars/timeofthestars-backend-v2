@@ -154,7 +154,7 @@ FK на соревнование — `ON DELETE CASCADE`: удалили сор�
 | `UserRole` | `admin`, `manager` |
 | `PlayerPosition` | `вратарь`, `защитник`, `нападающий` — **по-русски**, это значения, а не имена |
 | `CompetitionType` | `championship`, `tournament` |
-| `GameStage` | `matches`, `quarterfinal`, `semifinal`, `final` |
+| `GameStage` | `matches`, `quarterfinal`, `semifinal`, `final`, `third_place` |
 | `GameStatus` | `scheduled`, `finished` |
 | `GameEventType` | `goal`, `shootout_goal`, `penalty`, `goalie_change`, `empty_net` |
 | `HomepageBlockType` | `standings`, `bracket` |

@@ -116,14 +116,14 @@ const mediaUrl = (path: string | null) => (path ? `${API}${path}` : null);
 
 ```ts
 type CompetitionType = "championship" | "tournament";
-type GameStage       = "matches" | "quarterfinal" | "semifinal" | "final";
+type GameStage       = "matches" | "quarterfinal" | "semifinal" | "final" | "third_place";
 type GameStatus      = "scheduled" | "finished";
 // ⚠️ значения на русском — они приходят в JSON именно так
 type PlayerPosition  = "вратарь" | "защитник" | "нападающий";
 ```
 
 - `stage: "matches"` = регулярка (**только она идёт в турнирную таблицу**),
-  `quarterfinal` / `semifinal` / `final` = плей-офф.
+  `quarterfinal` / `semifinal` / `final` / `third_place` = плей-офф.
 - `status: "finished"` выставляется автоматически, когда у матча заполнены оба счёта.
   Матч без счёта — `scheduled`, для него `score_team_a` / `score_team_b` будут `null`.
 
@@ -135,6 +135,7 @@ const STAGE_LABEL: Record<GameStage, string> = {
   quarterfinal: "1/4 финала",
   semifinal: "1/2 финала",
   final: "Финал",
+  third_place: "За 3 место",
 };
 ```
 
@@ -549,6 +550,8 @@ GET /api/v1/players/{id}/goal-moments
 
 ### Сетка плей-офф
 
+Матч `third_place` показывайте отдельно от финала: он определяет третье место.
+
 Отдельной ручки нет — строится из `GET /competitions/{id}/games`:
 
 ```ts
@@ -559,6 +562,7 @@ const byStage = {
   quarterfinal: playoff.filter(g => g.stage === "quarterfinal"),
   semifinal:    playoff.filter(g => g.stage === "semifinal"),
   final:        playoff.filter(g => g.stage === "final"),
+  third_place:  playoff.filter(g => g.stage === "third_place"),
 };
 
 // вариант Б (если админ заполнил поля сетки): по раундам
@@ -651,7 +655,7 @@ for (const list of byRound.values()) list.sort((x, y) => (x.bracket_slot ?? 0) -
 ```ts
 // ---------- enums ----------
 export type CompetitionType = "championship" | "tournament";
-export type GameStage       = "matches" | "quarterfinal" | "semifinal" | "final";
+export type GameStage       = "matches" | "quarterfinal" | "semifinal" | "final" | "third_place";
 export type GameStatus      = "scheduled" | "finished";
 export type PlayerPosition  = "вратарь" | "защитник" | "нападающий";
 

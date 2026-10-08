@@ -22,6 +22,17 @@ class GameStage(StrEnum):
     quarterfinal = "quarterfinal"
     semifinal = "semifinal"
     final = "final"
+    third_place = "third_place"
+
+    @property
+    def label(self) -> str:
+        return {
+            self.matches: "Регулярный сезон",
+            self.quarterfinal: "Четвертьфинал",
+            self.semifinal: "Полуфинал",
+            self.final: "Финал",
+            self.third_place: "За 3 место",
+        }[self]
 
 
 class GameStatus(StrEnum):

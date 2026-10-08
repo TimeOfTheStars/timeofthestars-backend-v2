@@ -67,7 +67,7 @@
       {% for g in upcoming %}
       <tr>
         <td class="muted">{{ g.date }} {{ g.time or '' }}</td>
-        <td>#{{ g.id }} · <span class="pill">{{ g.stage }}</span></td>
+        <td>#{{ g.id }} · <span class="pill">{{ g.stage.label }}</span></td>
         <td class="num"><a class="btn sm" href="/admin/games/{{ g.id }}/protocol">Ввести</a></td>
       </tr>
       {% endfor %}
